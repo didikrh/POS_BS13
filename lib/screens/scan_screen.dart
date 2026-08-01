@@ -138,7 +138,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 // tampil sebagai layar hitam tanpa keterangan. Dengan ini,
                 // pesan error ASLI dari plugin ditampilkan ke layar supaya
                 // penyebabnya bisa dipastikan & dilaporkan kalau masih ada.
-                errorBuilder: (context, error) {
+                errorBuilder: (context, error, child) {
                   return Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24),
