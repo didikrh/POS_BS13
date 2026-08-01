@@ -51,26 +51,65 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     }
   }
 
+  int? _printingTrxId;
+
   Future<void> _reprint(PosTransaction trx) async {
-    final items = await DatabaseHelper.instance.getItemsForTransaction(trx.id!);
-    final settings = await DatabaseHelper.instance.getSettings();
-    final connected = await BluetoothPrinterService.instance.isConnected();
+    setState(() => _printingTrxId = trx.id);
+    String? errorMessage;
+    bool connected = false;
+    bool printed = false;
+
+    try {
+      final items =
+          await DatabaseHelper.instance.getItemsForTransaction(trx.id!);
+      final settings = await DatabaseHelper.instance.getSettings();
+
+      // Sama seperti di Checkout: blue_thermal_printer dikenal bisa
+      // menggantung/melempar exception kalau Bluetooth mati atau printer
+      // belum pernah terhubung. Dibungkus try/catch + timeout supaya
+      // tombol TIDAK diam saja tanpa reaksi apa pun.
+      try {
+        connected = await BluetoothPrinterService.instance
+            .isConnected()
+            .timeout(const Duration(seconds: 5), onTimeout: () => false);
+      } catch (_) {
+        connected = false;
+      }
+
+      if (connected) {
+        try {
+          printed = await ReceiptService.printReceipt(
+            trx: PosTransaction.fromMap(trx.toMap(), items: items),
+            settings: settings,
+          ).timeout(const Duration(seconds: 10), onTimeout: () => false);
+        } catch (_) {
+          printed = false;
+        }
+      }
+    } catch (e) {
+      errorMessage = e.toString();
+    } finally {
+      if (mounted) setState(() => _printingTrxId = null);
+    }
+
+    if (!mounted) return;
+
+    if (errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Gagal memuat data struk: $errorMessage'),
+      ));
+      return;
+    }
 
     if (!connected) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Printer belum terhubung. Sambungkan dulu di menu Pengaturan.'),
       ));
       return;
     }
 
-    final ok = await ReceiptService.printReceipt(
-      trx: PosTransaction.fromMap(trx.toMap(), items: items),
-      settings: settings,
-    );
-    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(ok ? 'Struk berhasil dicetak ulang.' : 'Gagal mencetak.'),
+      content: Text(printed ? 'Struk berhasil dicetak ulang.' : 'Gagal mencetak.'),
     ));
   }
 
@@ -122,11 +161,20 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                           children: [
                             Text(_currency.format(t.total),
                                 style: const TextStyle(fontWeight: FontWeight.bold)),
-                            IconButton(
-                              icon: const Icon(Icons.print, size: 20),
-                              onPressed: () => _reprint(t),
-                              tooltip: 'Cetak ulang struk',
-                            ),
+                            _printingTrxId == t.id
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: Padding(
+                                      padding: EdgeInsets.all(2.0),
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                  )
+                                : IconButton(
+                                    icon: const Icon(Icons.print, size: 20),
+                                    onPressed: () => _reprint(t),
+                                    tooltip: 'Cetak ulang struk',
+                                  ),
                           ],
                         ),
                       );

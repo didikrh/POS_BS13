@@ -127,66 +127,86 @@ class _ScanScreenState extends State<ScanScreen> {
         _CameraCheckState.denied ||
         _CameraCheckState.permanentlyDenied =>
           _buildPermissionMessage(),
-        _CameraCheckState.granted => Stack(
-            fit: StackFit.expand,
-            children: [
-              MobileScanner(
-                controller: _controller,
-                onDetect: _onDetect,
-                // Tanpa errorBuilder, kegagalan kamera (mis. sedang dipakai
-                // aplikasi lain, driver kamera OEM bermasalah, dsb) hanya
-                // tampil sebagai layar hitam tanpa keterangan. Dengan ini,
-                // pesan error ASLI dari plugin ditampilkan ke layar supaya
-                // penyebabnya bisa dipastikan & dilaporkan kalau masih ada.
-                errorBuilder: (context, error, child) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.error_outline,
-                              size: 56, color: Colors.red),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Kamera gagal dibuka.',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            error.toString(),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 12, color: Colors.white70),
-                          ),
-                          const SizedBox(height: 16),
-                          FilledButton(
-                            onPressed: () => _controller.start(),
-                            child: const Text('Coba Lagi'),
-                          ),
-                        ],
+        _CameraCheckState.granted => ValueListenableBuilder<MobileScannerState>(
+            valueListenable: _controller,
+            builder: (context, state, child) {
+              // Kalau ada error dari controller, tampilkan HANYA pesan error
+              // itu (layar penuh) - jangan dicampur dengan overlay kotak
+              // bidik / teks instruksi supaya tidak membingungkan seperti
+              // sebelumnya (pesan error tertutup teks lain).
+              if (state.error != null) {
+                return _buildCameraError(state.error!);
+              }
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  MobileScanner(
+                    controller: _controller,
+                    onDetect: _onDetect,
+                    errorBuilder: (context, error, child) =>
+                        _buildCameraError(error),
+                  ),
+                  const _ScanOverlay(),
+                  Positioned(
+                    bottom: 24,
+                    left: 0,
+                    right: 0,
+                    child: Text(
+                      'Arahkan kamera ke barcode/QR Code barang',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        backgroundColor: Colors.black.withOpacity(0.4),
                       ),
                     ),
-                  );
-                },
-              ),
-              // Overlay bidik sederhana
-              const _ScanOverlay(),
-              Positioned(
-                bottom: 24,
-                left: 0,
-                right: 0,
-                child: Text(
-                  'Arahkan kamera ke barcode/QR Code barang',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    backgroundColor: Colors.black.withOpacity(0.4),
                   ),
-                ),
+                ],
+              );
+            },
+          ),
+      },
+    );
+  }
+
+  Widget _buildCameraError(MobileScannerException error) {
+    return ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 56, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text(
+                'Kamera gagal dibuka.',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Kode: ${error.errorCode}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: Colors.white),
+              ),
+              const SizedBox(height: 4),
+              SelectableText(
+                error.errorDetails?.message ?? error.toString(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, color: Colors.white70),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => _controller.start(),
+                child: const Text('Coba Lagi'),
               ),
             ],
           ),
-      },
+        ),
+      ),
     );
   }
 }
