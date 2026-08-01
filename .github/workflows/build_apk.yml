@@ -26,7 +26,13 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.24.0'
+          # Sengaja TIDAK mengunci ke versi tertentu (mis. '3.24.0').
+          # Flutter selalu menjaga agar versi Kotlin/AGP/Gradle di dalam
+          # template proyek yang di-generate `flutter create` saling
+          # kompatibel dengan versi Flutter itu sendiri. Mengunci ke versi
+          # lama berisiko template-nya "basi" dibanding Gradle/Java yang
+          # dipakai runner GitHub Actions saat ini, dan memicu error
+          # semacam "requires a newer version of the Kotlin Gradle plugin".
           cache: true
 
       - name: Cek versi Flutter

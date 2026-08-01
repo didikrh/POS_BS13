@@ -135,15 +135,25 @@ Project ini sudah dilengkapi:
 - Buka log di tab **Actions** → klik step yang gagal (biasanya
   ditandai ❌) untuk lihat pesan error detailnya (mirip panel
   "Messages" di Delphi).
-- Error paling umum: versi `flutter-version` di
-  `.github/workflows/build_apk.yml` sudah terlalu lama dibanding versi
-  package di `pubspec.yaml` → coba naikkan nilai `flutter-version`
-  ke versi stable terbaru (cek https://docs.flutter.dev/release/archive).
+- **Error "Your project requires a newer version of the Kotlin Gradle
+  plugin"** → workflow ini sengaja **tidak mengunci versi Flutter
+  tertentu** (`channel: 'stable'` saja, tanpa `flutter-version:`)
+  supaya template proyek yang dibuat `flutter create` selalu memakai
+  kombinasi Kotlin/AGP/Gradle yang sudah teruji kompatibel oleh tim
+  Flutter. Kalau Anda (atau versi lama file ini) sempat mengunci ke
+  versi Flutter tertentu yang sudah lama, itu penyebab paling umum
+  error ini — hapus baris `flutter-version:` di
+  `.github/workflows/build_apk.yml` agar selalu pakai stable terbaru.
 - Kalau `tool/patch_android.py` gagal menemukan pola di
   `build.gradle`/`build.gradle.kts` (ditandai `[WARN]` di log). Ini
   bisa terjadi kalau template Flutter versi baru mengubah format
   filenya — laporkan isi error tsb dan file `build.gradle*` yang
   di-generate, supaya scriptnya bisa disesuaikan.
+- **`[ERROR] Tidak ditemukan: .../AndroidManifest.xml`** → pastikan
+  repo Anda **tidak** menyertakan folder `android/` sama sekali
+  (lihat diagram struktur di bagian 1) — folder ini harus dibuat
+  otomatis oleh `flutter create .` saat build, bukan dikomit manual
+  atau ikut ter-*push* dari percobaan sebelumnya.
 
 ## 3. Cara Menjalankan Secara Lokal (Alternatif, jika laptop mumpuni)
 
