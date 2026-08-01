@@ -1,0 +1,42 @@
+<!--
+  ============================================================
+  REFERENSI PERMISSION - AndroidManifest.xml
+  ------------------------------------------------------------
+  File ini BUKAN AndroidManifest.xml final. Setelah menjalankan
+  `flutter create .` (lihat README bagian "Cara Menjalankan"),
+  Flutter akan membuat folder android/ lengkap secara otomatis
+  berikut AndroidManifest.xml aslinya di:
+      android/app/src/main/AndroidManifest.xml
+
+  Salin/tambahkan baris-baris <uses-permission> dan atribut di
+  bawah ini ke DALAM file tsb (di dalam tag <manifest>, sebelum
+  tag <application>).
+  ============================================================
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Kamera (untuk scan barcode/QR via mobile_scanner) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!-- Bluetooth Classic (koneksi printer thermal - blue_thermal_printer) -->
+    <!-- Android 11 (API 30) ke bawah -->
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <!-- Android 6-11 butuh izin lokasi agar bisa scan/list perangkat Bluetooth -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="30" />
+
+    <!-- Android 12+ (API 31+) - permission model baru -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+
+    <!-- Jangan lupa tambahkan xmlns:tools di tag <manifest> paling atas jika belum ada:
+         xmlns:tools="http://schemas.android.com/tools" -->
+
+</manifest>
