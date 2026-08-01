@@ -154,6 +154,18 @@ Project ini sudah dilengkapi:
   (lihat diagram struktur di bagian 1) — folder ini harus dibuat
   otomatis oleh `flutter create .` saat build, bukan dikomit manual
   atau ikut ter-*push* dari percobaan sebelumnya.
+- **Error "Namespace not specified" pada modul plugin tertentu**
+  (mis. `blue_thermal_printer`) → ini terjadi karena AGP (Android
+  Gradle Plugin) versi 8+ mewajibkan setiap modul Android
+  mendeklarasikan `namespace`, sedangkan sejumlah plugin pub.dev lama
+  yang sudah tidak di-*maintain* belum menambahkannya. Sudah
+  ditangani otomatis oleh `tool/patch_android.py` (fungsi
+  `patch_root_namespace_fix`), yang menyuntikkan `namespace` fallback
+  untuk semua modul Android library yang belum mendeklarasikannya.
+  Kalau muncul lagi untuk plugin LAIN dengan pesan serupa, biasanya
+  cukup tunggu patch ini otomatis menanganinya juga (fix-nya berlaku
+  untuk semua modul, bukan spesifik satu plugin saja) — tapi kalau
+  tetap gagal, laporkan nama plugin & pesan errornya.
 
 ## 3. Cara Menjalankan Secara Lokal (Alternatif, jika laptop mumpuni)
 

@@ -124,7 +124,81 @@ def patch_gradle_min_sdk(min_sdk: int = 21):
         sys.exit(1)
 
 
+ROOT_GRADLE_KTS_PATH = ROOT / "android" / "build.gradle.kts"
+ROOT_GRADLE_GROOVY_PATH = ROOT / "android" / "build.gradle"
+
+NAMESPACE_FIX_MARKER = "namespace-fix-for-legacy-plugins"
+
+NAMESPACE_FIX_KTS_IMPORT = "import com.android.build.gradle.LibraryExtension\n"
+
+NAMESPACE_FIX_KTS_BLOCK = """
+// === namespace-fix-for-legacy-plugins ===
+// Beberapa plugin pub.dev lama (mis. blue_thermal_printer) belum menambahkan
+// `namespace` di build.gradle mereka, padahal AGP 8+ mewajibkannya. Blok ini
+// otomatis mengisi namespace fallback untuk SEMUA modul Android library yang
+// belum mendeklarasikannya, supaya build tidak gagal karena plugin lama yang
+// sudah tidak di-maintain.
+subprojects {
+    afterEvaluate {
+        extensions.findByType(LibraryExtension::class.java)?.let { ext ->
+            if (ext.namespace == null) {
+                ext.namespace = "com.tokoanda.legacyfix." + project.name.replace("-", "_")
+            }
+        }
+    }
+}
+"""
+
+NAMESPACE_FIX_GROOVY_BLOCK = """
+// === namespace-fix-for-legacy-plugins ===
+// Beberapa plugin pub.dev lama (mis. blue_thermal_printer) belum menambahkan
+// `namespace` di build.gradle mereka, padahal AGP 8+ mewajibkannya. Blok ini
+// otomatis mengisi namespace fallback untuk SEMUA modul Android library yang
+// belum mendeklarasikannya, supaya build tidak gagal karena plugin lama yang
+// sudah tidak di-maintain.
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            def androidExt = project.android
+            if (androidExt.hasProperty('namespace') && androidExt.namespace == null) {
+                androidExt.namespace = "com.tokoanda.legacyfix." + project.name.replace('-', '_')
+            }
+        }
+    }
+}
+"""
+
+
+def patch_root_namespace_fix():
+    if ROOT_GRADLE_KTS_PATH.exists():
+        path = ROOT_GRADLE_KTS_PATH
+        content = path.read_text(encoding="utf-8")
+        if NAMESPACE_FIX_MARKER in content:
+            print("[SKIP] Namespace-fix sudah pernah dipatch di build.gradle.kts.")
+            return
+        if "import com.android.build.gradle.LibraryExtension" not in content:
+            content = NAMESPACE_FIX_KTS_IMPORT + content
+        content = content + "\n" + NAMESPACE_FIX_KTS_BLOCK
+        path.write_text(content, encoding="utf-8")
+        print(f"[OK] Namespace-fix ditambahkan ke {path}")
+
+    elif ROOT_GRADLE_GROOVY_PATH.exists():
+        path = ROOT_GRADLE_GROOVY_PATH
+        content = path.read_text(encoding="utf-8")
+        if NAMESPACE_FIX_MARKER in content:
+            print("[SKIP] Namespace-fix sudah pernah dipatch di build.gradle.")
+            return
+        content = content + "\n" + NAMESPACE_FIX_GROOVY_BLOCK
+        path.write_text(content, encoding="utf-8")
+        print(f"[OK] Namespace-fix ditambahkan ke {path}")
+
+    else:
+        print("[ERROR] android/build.gradle(.kts) root tidak ditemukan untuk namespace-fix.")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     patch_manifest()
     patch_gradle_min_sdk(21)
+    patch_root_namespace_fix()
     print("Selesai patch android/.")
