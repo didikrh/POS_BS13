@@ -232,6 +232,100 @@ def patch_core_library_desugaring():
 ROOT_GRADLE_KTS_PATH = ROOT / "android" / "build.gradle.kts"
 ROOT_GRADLE_GROOVY_PATH = ROOT / "android" / "build.gradle"
 
+LEGACY_MIN_COMPILE_SDK = 36
+COMPILE_SDK_FIX_MARKER = "compilesdk-fix-for-legacy-plugins"
+
+COMPILE_SDK_FIX_KTS_BLOCK = f"""
+// === {COMPILE_SDK_FIX_MARKER} ===
+// blue_thermal_printer (dan plugin pub.dev lama sejenis) meng-hardcode
+// compileSdkVersion rendah (mis. 31) di build.gradle mereka sendiri.
+// AndroidX versi baru yang ikut ter-bundle sebagai dependency transitif
+// (androidx.fragment, androidx.window, androidx.lifecycle, dst) mewajibkan
+// modul yang memakainya di-compile terhadap API >= 34. Karena kita tidak
+// bisa mengedit source plugin pihak ketiga secara langsung, blok ini
+// memaksa compileSdk semua modul Android library yang MASIH DI BAWAH
+// {LEGACY_MIN_COMPILE_SDK} supaya dinaikkan otomatis - mencegah error
+// "checkReleaseAarMetadata ... requires libraries and applications that
+// depend on it to compile against version 34 or later".
+subprojects {{
+    val proj = this
+    val applyCompileSdkFix: () -> Unit = {{
+        proj.extensions.findByType(LibraryExtension::class.java)?.let {{ ext ->
+            val current = ext.compileSdk
+            if (current == null || current < {LEGACY_MIN_COMPILE_SDK}) {{
+                ext.compileSdk = {LEGACY_MIN_COMPILE_SDK}
+            }}
+        }}
+    }}
+    if (proj.state.executed) {{
+        applyCompileSdkFix()
+    }} else {{
+        proj.afterEvaluate {{ applyCompileSdkFix() }}
+    }}
+}}
+"""
+
+COMPILE_SDK_FIX_GROOVY_BLOCK = f"""
+// === {COMPILE_SDK_FIX_MARKER} ===
+// blue_thermal_printer (dan plugin pub.dev lama sejenis) meng-hardcode
+// compileSdkVersion rendah (mis. 31) di build.gradle mereka sendiri.
+// AndroidX versi baru yang ikut ter-bundle sebagai dependency transitif
+// (androidx.fragment, androidx.window, androidx.lifecycle, dst) mewajibkan
+// modul yang memakainya di-compile terhadap API >= 34. Blok ini memaksa
+// compileSdk semua modul Android library yang MASIH DI BAWAH
+// {LEGACY_MIN_COMPILE_SDK} supaya dinaikkan otomatis - mencegah error
+// "checkReleaseAarMetadata ... requires libraries and applications that
+// depend on it to compile against version 34 or later".
+subprojects {{ proj ->
+    def applyCompileSdkFix = {{
+        if (proj.hasProperty('android')) {{
+            def androidExt = proj.android
+            if (androidExt.hasProperty('compileSdkVersion')) {{
+                def current = androidExt.compileSdkVersion
+                def currentNum = (current instanceof String) ? current.replaceAll('[^0-9]', '') : current
+                if (currentNum == null || currentNum.toString().isEmpty() || (currentNum as Integer) < {LEGACY_MIN_COMPILE_SDK}) {{
+                    androidExt.compileSdkVersion {LEGACY_MIN_COMPILE_SDK}
+                }}
+            }}
+        }}
+    }}
+    if (proj.state.executed) {{
+        applyCompileSdkFix()
+    }} else {{
+        proj.afterEvaluate {{ applyCompileSdkFix() }}
+    }}
+}}
+"""
+
+
+def patch_subprojects_compile_sdk():
+    if ROOT_GRADLE_KTS_PATH.exists():
+        path = ROOT_GRADLE_KTS_PATH
+        content = path.read_text(encoding="utf-8")
+        if COMPILE_SDK_FIX_MARKER in content:
+            print("[SKIP] compileSdk-fix sudah pernah dipatch di build.gradle.kts.")
+            return
+        if "import com.android.build.gradle.LibraryExtension" not in content:
+            content = NAMESPACE_FIX_KTS_IMPORT + content
+        content = content + "\n" + COMPILE_SDK_FIX_KTS_BLOCK
+        path.write_text(content, encoding="utf-8")
+        print(f"[OK] compileSdk-fix ditambahkan ke {path}")
+
+    elif ROOT_GRADLE_GROOVY_PATH.exists():
+        path = ROOT_GRADLE_GROOVY_PATH
+        content = path.read_text(encoding="utf-8")
+        if COMPILE_SDK_FIX_MARKER in content:
+            print("[SKIP] compileSdk-fix sudah pernah dipatch di build.gradle.")
+            return
+        content = content + "\n" + COMPILE_SDK_FIX_GROOVY_BLOCK
+        path.write_text(content, encoding="utf-8")
+        print(f"[OK] compileSdk-fix ditambahkan ke {path}")
+
+    else:
+        print("[ERROR] android/build.gradle(.kts) root tidak ditemukan untuk compileSdk-fix.")
+        sys.exit(1)
+
+
 NAMESPACE_FIX_MARKER = "namespace-fix-for-legacy-plugins"
 
 NAMESPACE_FIX_KTS_IMPORT = "import com.android.build.gradle.LibraryExtension\n"
@@ -372,5 +466,6 @@ if __name__ == "__main__":
     patch_gradle_min_sdk(21)
     patch_core_library_desugaring()
     patch_root_namespace_fix()
+    patch_subprojects_compile_sdk()
     strip_legacy_package_attr_from_pub_cache()
     print("Selesai patch android/.")
