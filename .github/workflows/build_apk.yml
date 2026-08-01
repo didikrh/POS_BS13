@@ -34,11 +34,11 @@ jobs:
 
       - name: Generate folder android/ (jika belum ada)
         run: |
-          if [ ! -d "android" ]; then
-            echo "Folder android/ belum ada, menjalankan flutter create ..."
+          if [ ! -f "android/app/src/main/AndroidManifest.xml" ]; then
+            echo "Project Android belum di-scaffold, menjalankan flutter create ..."
             flutter create . --project-name pos_thermal_app --org com.tokoanda --platforms=android
           else
-            echo "Folder android/ sudah ada, lewati flutter create."
+            echo "android/app/src/main/AndroidManifest.xml sudah ada, lewati flutter create."
           fi
 
       - name: Patch permission & minSdkVersion otomatis

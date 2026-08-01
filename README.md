@@ -16,8 +16,12 @@ pos_thermal_app/
 │       └── build_apk.yml         # GitHub Actions - compile APK otomatis di cloud
 ├── tool/
 │   └── patch_android.py          # patch otomatis permission & minSdkVersion
-├── android/
+├── docs/
 │   └── AndroidManifest_REFERENCE.xml   # referensi permission (fallback manual)
+├── (android/ SENGAJA TIDAK ADA di repo — dibuat otomatis saat build
+│    lewat `flutter create .`, baik di GitHub Actions maupun lokal.
+│    Jangan buat folder android/ kosong/manual di repo, karena akan
+│    membuat langkah "flutter create" di CI ter-skip.)
 └── lib/
     ├── main.dart                 # entry point + routing
     ├── models/                   # Product, Cashier, StoreSettings, PosTransaction, TransactionItem
@@ -163,7 +167,7 @@ Flutter). Langkahnya:
    python3 tool/patch_android.py
    ```
    Kalau tidak ada Python terinstall, ikuti manual lewat referensi di
-   `android/AndroidManifest_REFERENCE.xml` sebagai gantinya.
+   `docs/AndroidManifest_REFERENCE.xml` sebagai gantinya.
 4. Install dependensi:
    ```
    flutter pub get
