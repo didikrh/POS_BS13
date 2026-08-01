@@ -26,13 +26,27 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          # Sengaja TIDAK mengunci ke versi tertentu (mis. '3.24.0').
-          # Flutter selalu menjaga agar versi Kotlin/AGP/Gradle di dalam
-          # template proyek yang di-generate `flutter create` saling
-          # kompatibel dengan versi Flutter itu sendiri. Mengunci ke versi
-          # lama berisiko template-nya "basi" dibanding Gradle/Java yang
-          # dipakai runner GitHub Actions saat ini, dan memicu error
-          # semacam "requires a newer version of the Kotlin Gradle plugin".
+          # DIKUNCI ke versi tertentu (bukan "stable" mengambang).
+          #
+          # Alasan perubahan: sebelumnya versi TIDAK dikunci dengan asumsi
+          # "flutter create" akan selalu menghasilkan template yang
+          # kompatibel dengan Flutter versi terbaru. Itu benar untuk
+          # template BAWAAN Flutter sendiri, TAPI proyek ini bergantung
+          # pada tool/patch_android.py yang mem-parsing/mengubah teks
+          # build.gradle(.kts) hasil generate dengan regex. Setiap kali
+          # Flutter merilis versi stable baru, bentuk template bisa
+          # sedikit berubah (versi Kotlin/AGP/Gradle, gaya penulisan
+          # compileOptions, dsb) SEBELUM patch script sempat disesuaikan
+          # - inilah sumber "bug muncul satu per satu" tanpa ada perubahan
+          # kode aplikasi. Mengunci versi membuat build 100% reproducible:
+          # hijau hari ini = hijau bulan depan, sampai versi ini sengaja
+          # dinaikkan (dan patch script diuji ulang bersamaan).
+          #
+          # Untuk naik versi: ubah angka di bawah, jalankan build lokal
+          # dulu (flutter build apk --release) untuk pastikan
+          # tool/patch_android.py masih cocok dengan template baru,
+          # baru commit.
+          flutter-version: '3.44.7'
           cache: true
 
       - name: Cek versi Flutter

@@ -125,6 +125,110 @@ def patch_gradle_min_sdk(min_sdk: int = 21):
         sys.exit(1)
 
 
+DESUGAR_MARKER = "desugar_jdk_libs"
+DESUGAR_LIB_COORDINATE = "com.android.tools:desugar_jdk_libs:2.1.4"
+
+
+def patch_core_library_desugaring():
+    """
+    mobile_scanner (CameraX/ML Kit) MEWAJIBKAN core library desugaring
+    diaktifkan di android/app/build.gradle(.kts). Tanpa ini, Gradle akan
+    gagal dengan error:
+        "Dependency ':mobile_scanner' requires core library desugaring
+         to be enabled for :app."
+    Ini SERING jadi penyebab `flutter build apk --release` gagal padahal
+    tidak ada perubahan kode - karena versi Flutter/AGP baru menegakkan
+    aturan ini lebih ketat. Fungsi ini idempotent.
+    """
+    if GRADLE_KTS_PATH.exists():
+        path = GRADLE_KTS_PATH
+        content = path.read_text(encoding="utf-8")
+        if DESUGAR_MARKER in content:
+            print("[SKIP] Core library desugaring sudah dipatch (kts).")
+            return
+
+        # 1. Aktifkan flag di dalam blok compileOptions.
+        if re.search(r"compileOptions\s*\{", content):
+            content = re.sub(
+                r"(compileOptions\s*\{)",
+                r"\1\n        isCoreLibraryDesugaringEnabled = true",
+                content,
+                count=1,
+            )
+        elif re.search(r"\bandroid\s*\{", content):
+            content = re.sub(
+                r"(android\s*\{)",
+                r"\1\n    compileOptions {\n"
+                r"        isCoreLibraryDesugaringEnabled = true\n"
+                r"        sourceCompatibility = JavaVersion.VERSION_11\n"
+                r"        targetCompatibility = JavaVersion.VERSION_11\n"
+                r"    }\n",
+                content,
+                count=1,
+            )
+        else:
+            print("[WARN] Tidak menemukan blok android{} di build.gradle.kts, lewati desugaring.")
+            return
+
+        # 2. Tambahkan dependency desugar_jdk_libs ke blok dependencies top-level.
+        dep_line = f'    coreLibraryDesugaring("{DESUGAR_LIB_COORDINATE}")\n'
+        matches = list(re.finditer(r"dependencies\s*\{", content))
+        if matches:
+            last = matches[-1]
+            insert_at = last.end()
+            content = content[:insert_at] + "\n" + dep_line + content[insert_at:]
+        else:
+            content += f'\ndependencies {{\n{dep_line}}}\n'
+
+        path.write_text(content, encoding="utf-8")
+        print(f"[OK] Core library desugaring diaktifkan di {path}")
+
+    elif GRADLE_GROOVY_PATH.exists():
+        path = GRADLE_GROOVY_PATH
+        content = path.read_text(encoding="utf-8")
+        if DESUGAR_MARKER in content:
+            print("[SKIP] Core library desugaring sudah dipatch (groovy).")
+            return
+
+        if re.search(r"compileOptions\s*\{", content):
+            content = re.sub(
+                r"(compileOptions\s*\{)",
+                r"\1\n        coreLibraryDesugaringEnabled true",
+                content,
+                count=1,
+            )
+        elif re.search(r"\bandroid\s*\{", content):
+            content = re.sub(
+                r"(android\s*\{)",
+                r"\1\n    compileOptions {\n"
+                r"        coreLibraryDesugaringEnabled true\n"
+                r"        sourceCompatibility JavaVersion.VERSION_11\n"
+                r"        targetCompatibility JavaVersion.VERSION_11\n"
+                r"    }\n",
+                content,
+                count=1,
+            )
+        else:
+            print("[WARN] Tidak menemukan blok android{} di build.gradle, lewati desugaring.")
+            return
+
+        dep_line = f"    coreLibraryDesugaring '{DESUGAR_LIB_COORDINATE}'\n"
+        matches = list(re.finditer(r"dependencies\s*\{", content))
+        if matches:
+            last = matches[-1]
+            insert_at = last.end()
+            content = content[:insert_at] + "\n" + dep_line + content[insert_at:]
+        else:
+            content += f"\ndependencies {{\n{dep_line}}}\n"
+
+        path.write_text(content, encoding="utf-8")
+        print(f"[OK] Core library desugaring diaktifkan di {path}")
+
+    else:
+        print("[ERROR] build.gradle / build.gradle.kts (app) tidak ditemukan untuk desugaring.")
+        sys.exit(1)
+
+
 ROOT_GRADLE_KTS_PATH = ROOT / "android" / "build.gradle.kts"
 ROOT_GRADLE_GROOVY_PATH = ROOT / "android" / "build.gradle"
 
@@ -266,6 +370,7 @@ def strip_legacy_package_attr_from_pub_cache():
 if __name__ == "__main__":
     patch_manifest()
     patch_gradle_min_sdk(21)
+    patch_core_library_desugaring()
     patch_root_namespace_fix()
     strip_legacy_package_attr_from_pub_cache()
     print("Selesai patch android/.")
