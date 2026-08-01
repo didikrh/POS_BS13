@@ -3,9 +3,10 @@
 Patch otomatis folder android/ hasil `flutter create .` supaya:
 1. AndroidManifest.xml berisi permission Kamera & Bluetooth yang dibutuhkan
    (mobile_scanner, blue_thermal_printer).
-2. minSdkVersion di-set minimal 21 (dibutuhkan mobile_scanner / ML Kit),
-   mendukung format build.gradle (Groovy) MAUPUN build.gradle.kts (Kotlin DSL)
-   tergantung versi Flutter yang dipakai di runner GitHub Actions.
+2. minSdkVersion di-set minimal 23 (dibutuhkan mobile_scanner versi
+   terbaru / ML Kit + CameraX), mendukung format build.gradle (Groovy)
+   MAUPUN build.gradle.kts (Kotlin DSL) tergantung versi Flutter yang
+   dipakai di runner GitHub Actions.
 
 Script ini idempotent - aman dijalankan berkali-kali (tidak akan
 menduplikasi permission jika sudah pernah dipatch sebelumnya).
@@ -463,7 +464,7 @@ def strip_legacy_package_attr_from_pub_cache():
 
 if __name__ == "__main__":
     patch_manifest()
-    patch_gradle_min_sdk(21)
+    patch_gradle_min_sdk(23)
     patch_core_library_desugaring()
     patch_root_namespace_fix()
     patch_subprojects_compile_sdk()

@@ -118,33 +118,86 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             _paidCtrl.text.replaceAll('.', '').replaceAll(',', '')) ??
         0;
 
-    final trxNo = await DatabaseHelper.instance.nextTrxNo();
-    final trx = PosTransaction(
-      trxNo: trxNo,
-      trxDate: DateTime.now(),
-      cashierName: appState.activeCashier?.name ?? '-',
-      customerName: _custNameCtrl.text.trim(),
-      customerAddress: _custAddrCtrl.text.trim(),
-      subtotal: subtotal,
-      discount: 0,
-      total: subtotal,
-      paid: paid,
-      change: paid - subtotal,
-      items: appState.cart.map((l) => l.toTransactionItem()).toList(),
-    );
-
-    await DatabaseHelper.instance.saveTransaction(trx);
-
-    final settings = await DatabaseHelper.instance.getSettings();
-    final connected = await BluetoothPrinterService.instance.isConnected();
-
+    // PosTransaction dibuat di luar try supaya tetap bisa dipakai untuk
+    // pesan sukses di bawah tanpa perlu deklarasi ulang.
+    late final PosTransaction trx;
     bool printed = false;
-    if (connected) {
-      printed = await ReceiptService.printReceipt(trx: trx, settings: settings);
+    bool connected = false;
+    String? errorMessage;
+
+    try {
+      final trxNo = await DatabaseHelper.instance.nextTrxNo();
+      trx = PosTransaction(
+        trxNo: trxNo,
+        trxDate: DateTime.now(),
+        cashierName: appState.activeCashier?.name ?? '-',
+        customerName: _custNameCtrl.text.trim(),
+        customerAddress: _custAddrCtrl.text.trim(),
+        subtotal: subtotal,
+        discount: 0,
+        total: subtotal,
+        paid: paid,
+        change: paid - subtotal,
+        items: appState.cart.map((l) => l.toTransactionItem()).toList(),
+      );
+
+      // Simpan transaksi dulu - ini yang PALING PENTING untuk tidak hilang,
+      // jadi dipisah dari proses cetak yang lebih rawan gagal (Bluetooth).
+      await DatabaseHelper.instance.saveTransaction(trx);
+
+      final settings = await DatabaseHelper.instance.getSettings();
+
+      // Bluetooth (blue_thermal_printer) dikenal kadang menggantung/lempar
+      // exception kalau adapter mati atau printer belum pernah terhubung.
+      // Diberi timeout supaya UI TIDAK stuck selamanya walau plugin native
+      // tidak pernah merespons.
+      try {
+        connected = await BluetoothPrinterService.instance
+            .isConnected()
+            .timeout(const Duration(seconds: 5), onTimeout: () => false);
+      } catch (_) {
+        connected = false;
+      }
+
+      if (connected) {
+        try {
+          printed = await ReceiptService.printReceipt(trx: trx, settings: settings)
+              .timeout(const Duration(seconds: 10), onTimeout: () => false);
+        } catch (_) {
+          printed = false;
+        }
+      }
+    } catch (e) {
+      errorMessage = e.toString();
+    } finally {
+      if (mounted) setState(() => _processing = false);
     }
 
     if (!mounted) return;
-    setState(() => _processing = false);
+
+    // Kalau gagal SEBELUM transaksi sempat tersimpan (mis. gagal generate
+    // nomor transaksi / gagal saveTransaction), beri tahu apa adanya dan
+    // JANGAN kosongkan keranjang - supaya kasir bisa coba SIMPAN lagi.
+    if (errorMessage != null) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Transaksi Gagal Disimpan'),
+          content: Text(
+            'Terjadi kesalahan saat menyimpan transaksi:\n$errorMessage\n\n'
+            'Keranjang belanja TIDAK dikosongkan. Silakan coba lagi.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     appState.clearCart();
 
     showDialog(
