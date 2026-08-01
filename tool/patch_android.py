@@ -139,12 +139,21 @@ NAMESPACE_FIX_KTS_BLOCK = """
 // belum mendeklarasikannya, supaya build tidak gagal karena plugin lama yang
 // sudah tidak di-maintain.
 subprojects {
-    afterEvaluate {
-        extensions.findByType(LibraryExtension::class.java)?.let { ext ->
+    val proj = this
+    val applyNamespaceFix: () -> Unit = {
+        proj.extensions.findByType(LibraryExtension::class.java)?.let { ext ->
             if (ext.namespace == null) {
-                ext.namespace = "com.tokoanda.legacyfix." + project.name.replace("-", "_")
+                ext.namespace = "com.tokoanda.legacyfix." + proj.name.replace("-", "_")
             }
         }
+    }
+    if (proj.state.executed) {
+        // Project sudah selesai dievaluasi lebih dulu (tergantung urutan
+        // konfigurasi Gradle) - afterEvaluate tidak bisa dipanggil lagi,
+        // jadi jalankan fix-nya langsung.
+        applyNamespaceFix()
+    } else {
+        proj.afterEvaluate { applyNamespaceFix() }
     }
 }
 """
@@ -156,14 +165,22 @@ NAMESPACE_FIX_GROOVY_BLOCK = """
 // otomatis mengisi namespace fallback untuk SEMUA modul Android library yang
 // belum mendeklarasikannya, supaya build tidak gagal karena plugin lama yang
 // sudah tidak di-maintain.
-subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty('android')) {
-            def androidExt = project.android
+subprojects { proj ->
+    def applyNamespaceFix = {
+        if (proj.hasProperty('android')) {
+            def androidExt = proj.android
             if (androidExt.hasProperty('namespace') && androidExt.namespace == null) {
-                androidExt.namespace = "com.tokoanda.legacyfix." + project.name.replace('-', '_')
+                androidExt.namespace = "com.tokoanda.legacyfix." + proj.name.replace('-', '_')
             }
         }
+    }
+    if (proj.state.executed) {
+        // Project sudah selesai dievaluasi lebih dulu (tergantung urutan
+        // konfigurasi Gradle) - afterEvaluate tidak bisa dipanggil lagi,
+        // jadi jalankan fix-nya langsung.
+        applyNamespaceFix()
+    } else {
+        proj.afterEvaluate { applyNamespaceFix() }
     }
 }
 """
