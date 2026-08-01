@@ -167,6 +167,18 @@ Project ini sudah dilengkapi:
   untuk semua modul, bukan spesifik satu plugin saja) — tapi kalau
   tetap gagal, laporkan nama plugin & pesan errornya.
 
+- **Error "Setting the namespace via the package attribute in the
+  source AndroidManifest.xml is no longer supported"** → plugin pihak
+  ketiga (mis. `blue_thermal_printer`) masih memakai atribut
+  `package="..."` di `AndroidManifest.xml` miliknya sendiri, cara lama
+  yang sudah dihapus dukungannya oleh Android Gradle Plugin terbaru.
+  Sudah ditangani otomatis oleh `tool/patch_android.py` (fungsi
+  `strip_legacy_package_attr_from_pub_cache`), yang mencari &
+  menghapus atribut tsb dari semua package pihak ketiga di pub-cache
+  setelah `flutter pub get`. **Urutan step di workflow penting**:
+  `flutter pub get` harus jalan **sebelum** `tool/patch_android.py`,
+  supaya package-nya sudah ter-download ke pub-cache saat di-patch.
+
 ## 3. Cara Menjalankan Secara Lokal (Alternatif, jika laptop mumpuni)
 
 Project ini berisi **kode Dart (`lib/`) dan `pubspec.yaml`**, tapi
@@ -182,18 +194,22 @@ Flutter). Langkahnya:
    ```
    Perintah ini akan membuat folder `android/`, `ios/`, dll secara
    otomatis **tanpa menimpa** `lib/` dan `pubspec.yaml` yang sudah ada.
-3. Jalankan patch otomatis (permission Kamera/Bluetooth +
-   `minSdkVersion`) — script yang sama persis dengan yang dipakai
-   GitHub Actions, supaya hasilnya konsisten:
+3. Install dependensi (WAJIB sebelum langkah patch, supaya package
+   pihak ketiga sudah ter-download ke pub-cache):
+   ```
+   flutter pub get
+   ```
+4. Jalankan patch otomatis (permission Kamera/Bluetooth,
+   `minSdkVersion`, & perbaikan namespace plugin lama) — script yang
+   sama persis dengan yang dipakai GitHub Actions, supaya hasilnya
+   konsisten:
    ```
    python3 tool/patch_android.py
    ```
    Kalau tidak ada Python terinstall, ikuti manual lewat referensi di
-   `docs/AndroidManifest_REFERENCE.xml` sebagai gantinya.
-4. Install dependensi:
-   ```
-   flutter pub get
-   ```
+   `docs/AndroidManifest_REFERENCE.xml` sebagai gantinya (perbaikan
+   namespace plugin harus disesuaikan manual, cek isi
+   `tool/patch_android.py` sebagai acuan).
 5. Jalankan ke HP Android (harus device fisik, karena emulator umumnya
    tidak punya Bluetooth & kamera yang berfungsi penuh):
    ```

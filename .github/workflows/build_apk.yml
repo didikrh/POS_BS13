@@ -47,11 +47,11 @@ jobs:
             echo "android/app/src/main/AndroidManifest.xml sudah ada, lewati flutter create."
           fi
 
-      - name: Patch permission & minSdkVersion otomatis
-        run: python3 tool/patch_android.py
-
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Patch permission, minSdkVersion, & namespace legacy plugin
+        run: python3 tool/patch_android.py
 
       - name: Analisa kode (opsional, tidak menggagalkan build jika ada warning)
         run: flutter analyze || true

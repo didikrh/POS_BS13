@@ -11,6 +11,7 @@ Script ini idempotent - aman dijalankan berkali-kali (tidak akan
 menduplikasi permission jika sudah pernah dipatch sebelumnya).
 """
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -214,8 +215,57 @@ def patch_root_namespace_fix():
         sys.exit(1)
 
 
+def strip_legacy_package_attr_from_pub_cache():
+    """
+    Beberapa plugin pub.dev lama (mis. blue_thermal_printer) masih punya
+    atribut `package="..."` di AndroidManifest.xml mereka sendiri - cara
+    lama untuk mendeklarasikan namespace yang SUDAH TIDAK DIDUKUNG SAMA
+    SEKALI oleh Android Gradle Plugin versi baru ("no longer supported").
+    Fungsi ini mencari semua AndroidManifest.xml milik package pihak
+    ketiga di pub-cache dan menghapus atribut tsb (namespace tetap
+    diisi lewat jalur resmi Gradle oleh patch_root_namespace_fix()).
+    """
+    pub_cache_env = os.environ.get("PUB_CACHE")
+    candidates = []
+    if pub_cache_env:
+        candidates.append(Path(pub_cache_env))
+    candidates.append(Path.home() / ".pub-cache")
+
+    pub_cache_dir = next((p for p in candidates if p.exists()), None)
+    if pub_cache_dir is None:
+        print("[WARN] Folder pub-cache tidak ditemukan, lewati strip package attr "
+              "(mungkin belum pernah `flutter pub get`).")
+        return
+
+    hosted_dir = pub_cache_dir / "hosted" / "pub.dev"
+    if not hosted_dir.exists():
+        print(f"[WARN] {hosted_dir} tidak ditemukan, lewati strip package attr.")
+        return
+
+    pattern = re.compile(r'\s+package\s*=\s*"[^"]*"')
+    pattern_sq = re.compile(r"\s+package\s*=\s*'[^']*'")
+
+    changed_files = 0
+    for manifest_file in hosted_dir.glob("*/android/src/main/AndroidManifest.xml"):
+        content = manifest_file.read_text(encoding="utf-8")
+        new_content = pattern.sub("", content)
+        new_content = pattern_sq.sub("", new_content)
+        if new_content != content:
+            manifest_file.write_text(new_content, encoding="utf-8")
+            changed_files += 1
+            print(f"[OK] Atribut package= dihapus dari {manifest_file}")
+
+    if changed_files == 0:
+        print("[SKIP] Tidak ada AndroidManifest.xml package pihak ketiga yang "
+              "perlu di-strip (sudah bersih / tidak ditemukan).")
+    else:
+        print(f"[OK] Total {changed_files} file AndroidManifest.xml package "
+              "pihak ketiga sudah dipatch.")
+
+
 if __name__ == "__main__":
     patch_manifest()
     patch_gradle_min_sdk(21)
     patch_root_namespace_fix()
+    strip_legacy_package_attr_from_pub_cache()
     print("Selesai patch android/.")
