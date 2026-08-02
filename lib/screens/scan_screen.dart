@@ -152,7 +152,7 @@ class _ScanScreenState extends State<ScanScreen> {
                   MobileScanner(
                     controller: _controller,
                     onDetect: _onDetect,
-                    errorBuilder: (context, error) =>
+                    errorBuilder: (context, error, child) =>
                         _buildCameraError(error),
                   ),
                   const _ScanOverlay(),

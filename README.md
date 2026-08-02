@@ -23,10 +23,6 @@ ditinjau. Ringkasan:
 - ✅ **Permission kamera eksplisit & error handling di `scan_screen.dart`**
   — API `cameraResolution` dan `ValueListenableBuilder<MobileScannerState>`
   sudah dikonfirmasi valid untuk `mobile_scanner: ^5.2.3`.
-- 🐛 **DIPERBAIKI**: `errorBuilder` pada `MobileScanner` dipanggil
-  dengan 3 parameter `(context, error, child)`, padahal API resminya
-  hanya menerima 2 parameter `(context, error)` — ini akan gagal
-  compile (type mismatch). Sudah diperbaiki jadi `(context, error)`.
 - 🐛 **DIPERBAIKI**: folder `tool/__pycache__/` (artefak lokal dari
   menjalankan `patch_android.py`) ikut ter-upload — sudah dihapus dan
   ditambahkan ke `.gitignore` supaya tidak terulang.
@@ -34,6 +30,33 @@ ditinjau. Ringkasan:
   fix, minSdk 23) dan penguncian versi Flutter di workflow sudah
   ditinjau — masuk akal dan konsisten dengan pola error yang sebelumnya
   muncul, tidak ada masalah struktural.
+
+### ⚠️ Koreksi atas kesalahan review sebelumnya (`errorBuilder`)
+
+Pada review sebelumnya, `errorBuilder` di `scan_screen.dart` sempat
+diubah dari 3 parameter `(context, error, child)` menjadi 2 parameter
+`(context, error)`, dengan alasan "API resmi `MobileScanner` cuma
+menerima 2 parameter". **Itu KELIRU** — dasar pengecekannya saat itu
+memakai halaman dokumentasi `pub.dev/packages/mobile_scanner` versi
+**"latest"** (tanpa embel-embel nomor versi di URL), padahal
+`pubspec.yaml` mengunci `mobile_scanner: ^5.2.3`. Ternyata parameter
+`child` pada `errorBuilder` baru DIHAPUS di rilis mayor setelah 5.x —
+di versi 5.2.3 yang benar-benar terpasang, `errorBuilder` **masih
+wajib 3 parameter**. Kesalahan ini baru ketahuan dari log build GitHub
+Actions (`Error: The argument type 'Widget Function(BuildContext,
+MobileScannerException)' can't be assigned to the parameter type
+'Widget Function(BuildContext, MobileScannerException, Widget?)?'`),
+dan sudah **dikembalikan ke 3 parameter** seperti kode asli Anda
+(yang ternyata sudah benar sejak awal).
+
+**Pelajaran & langkah pencegahan ke depan**: setiap kali mengecek
+kecocokan API sebuah package, verifikasi HARUS dilakukan terhadap
+halaman versi spesifik yang dikunci di `pubspec.yaml`
+(`pub.dev/packages/<nama>/versions/<versi-persis>`), bukan halaman
+"latest" — karena breaking change API bisa saja sudah terjadi di
+versi mayor yang lebih baru daripada yang benar-benar dipakai project
+ini. Ini berlaku untuk SEMUA dependency di project ini, bukan cuma
+`mobile_scanner`.
 
 Fitur baru yang ditambahkan pada paket ini: **export/import Excel**
 untuk data produk (lihat bagian 8).
@@ -396,6 +419,15 @@ Android modern (tidak perlu permission penyimpanan klasik).
   (`0x1B, 0x74, n`) di `EscPosBuilder.reset()` untuk memilih code page
   yang sesuai dengan manual printer Anda (nilai `n` berbeda-beda per
   merek printer).
+- **Error `The argument type 'Widget Function(...)' can't be assigned
+  to the parameter type 'Widget Function(..., Widget?)?'` pada
+  `errorBuilder`/`placeholderBuilder` di `scan_screen.dart`** → jumlah
+  parameter callback tsb **berubah antar versi mayor** `mobile_scanner`
+  (versi 5.x butuh 3 parameter `(context, error, child)`, versi lebih
+  baru cuma 2 `(context, error)`). Cocokkan jumlah parameter dengan
+  versi yang benar-benar terkunci di `pubspec.yaml` — cek halaman versi
+  spesifiknya di `pub.dev/packages/mobile_scanner/versions/<versi>`,
+  BUKAN halaman "latest".
 
 ## 10. Pengembangan Lanjutan yang Disarankan
 

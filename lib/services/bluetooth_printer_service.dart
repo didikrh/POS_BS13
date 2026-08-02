@@ -88,7 +88,7 @@ class BluetoothPrinterService {
     try {
       final connected = await isConnected();
       if (!connected) return false;
-      _bt.writeBytes(bytes);
+      await _bt.writeBytes(bytes);
       return true;
     } catch (_) {
       return false;
