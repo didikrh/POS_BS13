@@ -124,6 +124,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     bool printed = false;
     bool connected = false;
     String? errorMessage;
+    String? printErrorDetail;
 
     try {
       final trxNo = await DatabaseHelper.instance.nextTrxNo();
@@ -147,14 +148,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       final settings = await DatabaseHelper.instance.getSettings();
 
-      // Bluetooth (blue_thermal_printer) dikenal kadang menggantung/lempar
-      // exception kalau adapter mati atau printer belum pernah terhubung.
-      // Diberi timeout supaya UI TIDAK stuck selamanya walau plugin native
-      // tidak pernah merespons.
+      // isConnected() sekarang sudah mencoba beberapa kali secara internal
+      // (lihat BluetoothPrinterService) - timeout luar ini cuma jaring
+      // pengaman terakhir, dilonggarkan supaya tidak memotong di tengah
+      // proses percobaan ulang tersebut.
       try {
         connected = await BluetoothPrinterService.instance
             .isConnected()
-            .timeout(const Duration(seconds: 5), onTimeout: () => false);
+            .timeout(const Duration(seconds: 15), onTimeout: () => false);
       } catch (_) {
         connected = false;
       }
@@ -163,8 +164,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         try {
           printed = await ReceiptService.printReceipt(trx: trx, settings: settings)
               .timeout(const Duration(seconds: 10), onTimeout: () => false);
-        } catch (_) {
+        } catch (e) {
           printed = false;
+          printErrorDetail = e.toString();
         }
       }
     } catch (e) {
@@ -211,8 +213,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         content: Text(
           printed
               ? 'Struk "${trx.trxNo}" berhasil dicetak.'
-              : 'Data transaksi sudah tersimpan, namun struk belum tercetak. '
-                  'Sambungkan printer di menu Pengaturan lalu cetak ulang dari Riwayat Transaksi.',
+              : connected
+                  ? 'Data transaksi sudah tersimpan, namun struk gagal dicetak.'
+                      '${printErrorDetail != null ? '\n\nDetail: $printErrorDetail' : ''}'
+                      '\n\nCoba cetak ulang dari Riwayat Transaksi.'
+                  : 'Data transaksi sudah tersimpan, namun struk belum tercetak. '
+                      'Sambungkan printer di menu Pengaturan lalu cetak ulang dari Riwayat Transaksi.',
         ),
         actions: [
           TextButton(

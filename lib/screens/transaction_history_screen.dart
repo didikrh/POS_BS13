@@ -10,10 +10,10 @@ class TransactionHistoryScreen extends StatefulWidget {
   const TransactionHistoryScreen({super.key});
 
   @override
-  State<TransactionHistoryScreen> createState() => _TransactionHistoryScreenState();
+  State<TransactionHistoryScreen> createState() => TransactionHistoryScreenState();
 }
 
-class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
+class TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   List<PosTransaction> _list = [];
   DateTime _from = DateTime.now().subtract(const Duration(days: 7));
   DateTime _to = DateTime.now();
@@ -27,11 +27,33 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     _load();
   }
 
+  /// Dipanggil dari HomeScreen setiap kali tab "Riwayat" dipilih.
+  ///
+  /// KENAPA INI PERLU: navigasi bawah pakai IndexedStack supaya semua tab
+  /// tetap "hidup" (state tidak hilang saat pindah tab) - konsekuensinya,
+  /// initState() di layar ini HANYA jalan SATU KALI (saat login pertama
+  /// kali), bukan setiap kali tab dibuka. Tanpa refresh eksplisit ini,
+  /// transaksi baru yang dibuat SETELAH tab Riwayat pertama kali dibuka
+  /// TIDAK AKAN PERNAH muncul sampai aplikasi ditutup & dibuka ulang -
+  /// ini penyebab pasti laporan "riwayat tidak menampilkan transaksi yang
+  /// baru saja tersimpan".
+  void refreshToIncludeToday() {
+    final now = DateTime.now();
+    // Perluas _to ke "sekarang" kalau rentang yang dipilih user
+    // sebelumnya sudah tidak mencakup hari ini (mis. user pernah pilih
+    // rentang tanggal lampau lalu tidak diubah lagi).
+    if (_to.isBefore(now)) {
+      _to = now;
+    }
+    _load();
+  }
+
   Future<void> _load() async {
     final list = await DatabaseHelper.instance.getTransactionsBetween(
       DateTime(_from.year, _from.month, _from.day),
       DateTime(_to.year, _to.month, _to.day, 23, 59, 59),
     );
+    if (!mounted) return;
     setState(() => _list = list);
   }
 
@@ -55,7 +77,8 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
 
   Future<void> _reprint(PosTransaction trx) async {
     setState(() => _printingTrxId = trx.id);
-    String? errorMessage;
+    String? loadErrorMessage;
+    String? printErrorDetail;
     bool connected = false;
     bool printed = false;
 
@@ -64,14 +87,14 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
           await DatabaseHelper.instance.getItemsForTransaction(trx.id!);
       final settings = await DatabaseHelper.instance.getSettings();
 
-      // Sama seperti di Checkout: blue_thermal_printer dikenal bisa
-      // menggantung/melempar exception kalau Bluetooth mati atau printer
-      // belum pernah terhubung. Dibungkus try/catch + timeout supaya
-      // tombol TIDAK diam saja tanpa reaksi apa pun.
+      // isConnected() sekarang sudah mencoba beberapa kali secara internal
+      // (lihat BluetoothPrinterService) - timeout luar ini cuma jaring
+      // pengaman terakhir, dilonggarkan supaya tidak memotong di tengah
+      // proses percobaan ulang tersebut.
       try {
         connected = await BluetoothPrinterService.instance
             .isConnected()
-            .timeout(const Duration(seconds: 5), onTimeout: () => false);
+            .timeout(const Duration(seconds: 15), onTimeout: () => false);
       } catch (_) {
         connected = false;
       }
@@ -82,21 +105,22 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
             trx: PosTransaction.fromMap(trx.toMap(), items: items),
             settings: settings,
           ).timeout(const Duration(seconds: 10), onTimeout: () => false);
-        } catch (_) {
+        } catch (e) {
           printed = false;
+          printErrorDetail = e.toString();
         }
       }
     } catch (e) {
-      errorMessage = e.toString();
+      loadErrorMessage = e.toString();
     } finally {
       if (mounted) setState(() => _printingTrxId = null);
     }
 
     if (!mounted) return;
 
-    if (errorMessage != null) {
+    if (loadErrorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Gagal memuat data struk: $errorMessage'),
+        content: Text('Gagal memuat data struk: $loadErrorMessage'),
       ));
       return;
     }
@@ -109,9 +133,12 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     }
 
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(printed ? 'Struk berhasil dicetak ulang.' : 'Gagal mencetak.'),
+      content: Text(printed
+          ? 'Struk berhasil dicetak ulang.'
+          : 'Gagal mencetak.${printErrorDetail != null ? ' Detail: $printErrorDetail' : ''}'),
     ));
   }
+
 
   @override
   Widget build(BuildContext context) {

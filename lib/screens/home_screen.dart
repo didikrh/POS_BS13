@@ -14,12 +14,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
+  final _historyKey = GlobalKey<TransactionHistoryScreenState>();
 
-  final _pages = const [
-    PosScreen(),
-    ProductListScreen(),
-    TransactionHistoryScreen(),
-    SettingsScreen(),
+  late final _pages = [
+    const PosScreen(),
+    const ProductListScreen(),
+    TransactionHistoryScreen(key: _historyKey),
+    const SettingsScreen(),
   ];
 
   @override
@@ -28,7 +29,15 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: (i) {
+          setState(() => _index = i);
+          // Tab Riwayat (index 2) dipakai IndexedStack yang menjaga state
+          // tetap hidup - initState-nya hanya jalan sekali di awal, jadi
+          // transaksi baru tidak otomatis muncul tanpa refresh manual ini.
+          if (i == 2) {
+            _historyKey.currentState?.refreshToIncludeToday();
+          }
+        },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.point_of_sale), label: 'Kasir'),
           NavigationDestination(icon: Icon(Icons.inventory_2), label: 'Produk'),

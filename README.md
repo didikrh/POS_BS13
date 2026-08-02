@@ -6,6 +6,38 @@ Bluetooth**, identifikasi barang dengan **ketik manual atau scan
 barcode/QR Code**, dan database transaksi **SQLite (sqflite)** yang
 ringan.
 
+## 0. Catatan Hasil Review Kode (perubahan dari versi sebelumnya)
+
+Modifikasi yang sudah Anda buat pada 6 file (`checkout_screen.dart`,
+`home_screen.dart`, `scan_screen.dart`, `transaction_history_screen.dart`,
+`bluetooth_printer_service.dart`, `receipt_service.dart`,
+`tool/patch_android.py`, `.github/workflows/build_apk.yml`) sudah
+ditinjau. Ringkasan:
+
+- ✅ **Perbaikan riwayat transaksi tidak auto-refresh** (`GlobalKey` +
+  `refreshToIncludeToday()`) — tepat, benar-benar mengatasi konsekuensi
+  `IndexedStack` yang menjaga state tab tetap hidup.
+- ✅ **Retry & timeout pada `isConnected()`, error handling
+  try/catch/finally di checkout & reprint** — solid, tidak ada bug,
+  proteksi double-submit tetap terjaga.
+- ✅ **Permission kamera eksplisit & error handling di `scan_screen.dart`**
+  — API `cameraResolution` dan `ValueListenableBuilder<MobileScannerState>`
+  sudah dikonfirmasi valid untuk `mobile_scanner: ^5.2.3`.
+- 🐛 **DIPERBAIKI**: `errorBuilder` pada `MobileScanner` dipanggil
+  dengan 3 parameter `(context, error, child)`, padahal API resminya
+  hanya menerima 2 parameter `(context, error)` — ini akan gagal
+  compile (type mismatch). Sudah diperbaiki jadi `(context, error)`.
+- 🐛 **DIPERBAIKI**: folder `tool/__pycache__/` (artefak lokal dari
+  menjalankan `patch_android.py`) ikut ter-upload — sudah dihapus dan
+  ditambahkan ke `.gitignore` supaya tidak terulang.
+- ℹ️ Perubahan pada `tool/patch_android.py` (desugaring, compileSdk
+  fix, minSdk 23) dan penguncian versi Flutter di workflow sudah
+  ditinjau — masuk akal dan konsisten dengan pola error yang sebelumnya
+  muncul, tidak ada masalah struktural.
+
+Fitur baru yang ditambahkan pada paket ini: **export/import Excel**
+untuk data produk (lihat bagian 8).
+
 ## 1. Struktur Project
 
 ```
@@ -34,6 +66,7 @@ pos_thermal_app/
     │   ├── bluetooth_printer_service.dart # koneksi printer Bluetooth Classic
     │   ├── receipt_service.dart         # bangun & cetak struk (header/footer kustom)
     │   └── label_service.dart           # cetak label identitas barang
+    │   └── excel_product_service.dart   # export template/data & import produk (Excel)
     ├── state/
     │   └── app_state.dart        # sesi kasir aktif + keranjang belanja (Provider)
     └── screens/
@@ -309,7 +342,43 @@ Transport (pengiriman byte ke printer) memakai `blue_thermal_printer`
 karena printer thermal murah 58mm umumnya memakai profil **Bluetooth
 Classic (SPP)**, bukan BLE.
 
-## 8. Troubleshooting
+## 8. Export Template / Data & Import Produk via Excel
+
+Supaya tidak perlu mengetik data produk satu per satu di HP, sekarang
+tersedia menu **Export/Import Excel** (ikon dokumen di AppBar layar
+Produk):
+
+### Export Template Kosong
+Menghasilkan file `.xlsx` berisi kolom **Kode | Nama Barang | Harga |
+Stok | Satuan** (2 baris contoh sebagai panduan format). File ini
+yang Anda isi di Excel/Google Sheets di komputer.
+
+### Export Data Saat Ini
+Sama seperti di atas, tapi terisi SEMUA produk yang sudah ada di
+database saat ini — berguna untuk backup, edit massal (ubah harga
+banyak produk sekaligus di Excel), lalu import balik.
+
+### Import dari Excel
+Pilih file `.xlsx` yang sudah diisi (baik dari Template Kosong maupun
+hasil Export Data yang sudah diedit). Aturan import:
+- **Kode sudah ada** di database → produk tsb **diperbarui** (nama,
+  harga, stok, satuan mengikuti isi Excel).
+- **Kode belum ada** → produk **baru ditambahkan**.
+- Baris tanpa Kode, tanpa Nama, atau Harga tidak valid akan
+  **dilewati** (dilaporkan di ringkasan hasil import, lengkap dengan
+  nomor baris & alasannya, supaya mudah diperbaiki lalu diimpor ulang).
+- Sheet yang dibaca adalah **sheet pertama** di file (nama sheet bebas
+  diubah), baris pertama harus tetap header.
+
+Implementasi: `lib/services/excel_product_service.dart`, memakai
+package **`excel`** (pure Dart, TANPA kode native Android sama sekali
+— sengaja dipilih dibanding pustaka lain yang berbasis native, supaya
+fitur ini tidak berpotensi memicu masalah Gradle/AGP seperti yang
+sempat dialami dengan `blue_thermal_printer`) dan **`file_picker`**
+untuk dialog simpan/pilih file yang mengikuti Storage Access Framework
+Android modern (tidak perlu permission penyimpanan klasik).
+
+## 9. Troubleshooting
 
 - **Printer tidak muncul di daftar Pengaturan** → pastikan sudah
   di-*pairing* lebih dulu lewat Pengaturan Bluetooth bawaan HP (di
@@ -328,7 +397,7 @@ Classic (SPP)**, bukan BLE.
   yang sesuai dengan manual printer Anda (nilai `n` berbeda-beda per
   merek printer).
 
-## 9. Pengembangan Lanjutan yang Disarankan
+## 10. Pengembangan Lanjutan yang Disarankan
 
 - Master Kasir (CRUD, saat ini kasir baru harus ditambah manual ke
   tabel `cashiers`).

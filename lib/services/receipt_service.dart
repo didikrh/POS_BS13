@@ -64,10 +64,19 @@ class ReceiptService {
 
     // ---------------- FOOTER: QR Code info transaksi + ucapan ----------------
     b.align(EscPosAlign.center);
-    final qrPayload =
-        'TRX:${trx.trxNo}|TGL:${trx.trxDate.toIso8601String()}|TOTAL:${trx.total.toStringAsFixed(0)}|KASIR:${trx.cashierName}';
-    b.qrImage(qrPayload, scale: 3);
-    b.feed(1);
+    // QR code dibungkus try/catch TERSENDIRI: ini bagian paling kompleks
+    // (encoding QR + konversi bitmap ke raster ESC/POS "GS v 0", yang
+    // TIDAK didukung sebagian printer thermal murah/generik). Kalau bagian
+    // ini gagal, jangan sampai seluruh struk batal tercetak - lewati QR-nya
+    // saja, sisa struk (item & total, yang jauh lebih penting) tetap jalan.
+    try {
+      final qrPayload =
+          'TRX:${trx.trxNo}|TGL:${trx.trxDate.toIso8601String()}|TOTAL:${trx.total.toStringAsFixed(0)}|KASIR:${trx.cashierName}';
+      b.qrImage(qrPayload, scale: 3);
+      b.feed(1);
+    } catch (_) {
+      // QR gagal dibuat/dirender - lanjutkan tanpa QR.
+    }
     b.line(settings.footerGreeting);
     b.feed(3);
     b.cutPaper();

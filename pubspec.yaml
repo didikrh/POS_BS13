@@ -37,6 +37,18 @@ dependencies:
   uuid: ^4.4.0
   provider: ^6.1.2
 
+  # --- Export/Import Template & Data ke Excel (.xlsx) ---
+  # "excel" adalah library PURE DART (tidak ada kode native Android/iOS
+  # sama sekali) - dipilih SENGAJA karena ini menghindari seluruh kelas
+  # masalah yang sudah kita alami dengan blue_thermal_printer (namespace,
+  # compileSdk, package attribute, dst - semua itu masalah level Gradle/
+  # native Android yang TIDAK BISA terjadi pada library pure Dart).
+  excel: ^4.0.6
+  # file_picker dipakai untuk dialog "Simpan Sebagai" (export) & "Pilih
+  # File" (import) yang mengikuti Storage Access Framework Android modern
+  # (tidak butuh permission storage klasik yang sudah dibatasi Android 11+).
+  file_picker: ^8.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

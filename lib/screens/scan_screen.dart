@@ -17,7 +17,16 @@ class ScanScreen extends StatefulWidget {
 enum _CameraCheckState { checking, granted, denied, permanentlyDenied }
 
 class _ScanScreenState extends State<ScanScreen> {
-  final MobileScannerController _controller = MobileScannerController();
+  // cameraResolution DIPAKSA ke nilai tetap (bukan biarkan CameraX
+  // auto-pilih resolusi tertinggi yang didukung). Di sejumlah perangkat
+  // Android dengan implementasi Camera2 HAL yang tidak standar, proses
+  // auto-deteksi resolusi itu sendiri yang memicu NullPointerException
+  // native ("getClass() on a null object reference") saat CameraX
+  // membaca karakteristik kamera - persis error yang sebelumnya muncul.
+  // Resolusi 1280x720 dipilih karena didukung praktis semua perangkat.
+  final MobileScannerController _controller = MobileScannerController(
+    cameraResolution: Size(1280, 720),
+  );
   bool _handled = false;
   _CameraCheckState _permState = _CameraCheckState.checking;
 
@@ -143,7 +152,7 @@ class _ScanScreenState extends State<ScanScreen> {
                   MobileScanner(
                     controller: _controller,
                     onDetect: _onDetect,
-                    errorBuilder: (context, error, child) =>
+                    errorBuilder: (context, error) =>
                         _buildCameraError(error),
                   ),
                   const _ScanOverlay(),

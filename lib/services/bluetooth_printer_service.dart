@@ -39,9 +39,30 @@ class BluetoothPrinterService {
     }
   }
 
-  Future<bool> isConnected() async {
-    final connected = await _bt.isConnected;
-    return connected ?? false;
+  /// Cek status koneksi printer. Plugin `blue_thermal_printer` ini dikenal
+  /// KADANG memberi hasil yang tidak konsisten kalau dipanggil segera
+  /// setelah pindah layar (native method channel-nya perlu sedikit waktu
+  /// untuk "settle"). Daripada langsung menyimpulkan "tidak terhubung"
+  /// dari SATU kali panggilan yang mungkin kebetulan gagal/lambat, di
+  /// sini dicoba beberapa kali dengan jeda singkat sebelum benar-benar
+  /// menyerah - supaya tidak salah menampilkan "printer tidak terhubung"
+  /// padahal sebenarnya masih terhubung.
+  Future<bool> isConnected({int attempts = 3}) async {
+    for (var i = 0; i < attempts; i++) {
+      try {
+        final connected = await _bt.isConnected.timeout(
+          const Duration(seconds: 4),
+          onTimeout: () => null,
+        );
+        if (connected == true) return true;
+      } catch (_) {
+        // coba lagi
+      }
+      if (i < attempts - 1) {
+        await Future.delayed(const Duration(milliseconds: 400));
+      }
+    }
+    return false;
   }
 
   Future<bool> connect(BluetoothDevice device) async {

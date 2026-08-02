@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
 import '../models/product.dart';
 import '../services/label_service.dart';
+import '../services/excel_product_service.dart';
 import 'product_form_screen.dart';
 import 'scan_screen.dart';
 
@@ -91,6 +92,129 @@ class _ProductListScreenState extends State<ProductListScreen> {
     ));
   }
 
+  bool _excelBusy = false;
+
+  Future<void> _exportTemplate() async {
+    setState(() => _excelBusy = true);
+    bool ok = false;
+    String? error;
+    try {
+      ok = await ExcelProductService.exportTemplate();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => _excelBusy = false);
+    }
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal membuat template: $error')));
+    } else if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Template Excel berhasil disimpan. Silakan isi lalu import kembali.'),
+      ));
+    }
+    // ok == false tanpa error berarti user membatalkan dialog simpan - diam saja.
+  }
+
+  Future<void> _exportData() async {
+    setState(() => _excelBusy = true);
+    bool ok = false;
+    String? error;
+    try {
+      ok = await ExcelProductService.exportData();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => _excelBusy = false);
+    }
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal export data: $error')));
+    } else if (ok) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Data produk berhasil diexport.')));
+    }
+  }
+
+  Future<void> _importFromExcel() async {
+    setState(() => _excelBusy = true);
+    ExcelImportResult? result;
+    String? error;
+    try {
+      result = await ExcelProductService.importFromExcel();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => _excelBusy = false);
+    }
+
+    if (!mounted) return;
+
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal import: $error')));
+      return;
+    }
+    if (result == null) return; // user membatalkan pemilihan file
+
+    if (!result.sukses) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Import Gagal'),
+          content: Text(result!.errorFatal!),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+          ],
+        ),
+      );
+      return;
+    }
+
+    await _load(search: _searchCtrl.text);
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Import Selesai'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('✅ ${result!.ditambahkan} produk baru ditambahkan.'),
+              Text('🔄 ${result.diperbarui} produk diperbarui.'),
+              if (result.dilewati.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('⚠️ ${result.dilewati.length} baris dilewati:',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: result.dilewati.length,
+                    itemBuilder: (_, i) {
+                      final e = result!.dilewati[i];
+                      return Text('  Baris ${e.baris}: ${e.alasan}',
+                          style: const TextStyle(fontSize: 12));
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -98,7 +222,59 @@ class _ProductListScreenState extends State<ProductListScreen> {
         title: const Text('Master Produk'),
         actions: [
           IconButton(icon: const Icon(Icons.qr_code_scanner), onPressed: _scanToFind),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.description_outlined),
+            tooltip: 'Export / Import Excel',
+            onSelected: (value) {
+              switch (value) {
+                case 'template':
+                  _exportTemplate();
+                  break;
+                case 'export':
+                  _exportData();
+                  break;
+                case 'import':
+                  _importFromExcel();
+                  break;
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'template',
+                child: ListTile(
+                  leading: Icon(Icons.file_download_outlined),
+                  title: Text('Export Template Kosong'),
+                  subtitle: Text('Untuk diisi lalu diimpor kembali'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'export',
+                child: ListTile(
+                  leading: Icon(Icons.save_alt),
+                  title: Text('Export Data Saat Ini'),
+                  subtitle: Text('Semua produk yang sudah tersimpan'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'import',
+                child: ListTile(
+                  leading: Icon(Icons.file_upload_outlined),
+                  title: Text('Import dari Excel'),
+                  subtitle: Text('Tambah/perbarui banyak produk sekaligus'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
         ],
+        bottom: _excelBusy
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(3),
+                child: LinearProgressIndicator(minHeight: 3),
+              )
+            : null,
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openForm(),

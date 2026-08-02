@@ -8,6 +8,10 @@ build/
 .pub/
 pubspec.lock
 
+# Python (tool/patch_android.py)
+__pycache__/
+*.pyc
+
 # Android (akan di-generate otomatis oleh `flutter create .` / CI)
 android/.gradle/
 android/captures/
