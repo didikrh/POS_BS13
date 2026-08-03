@@ -52,6 +52,22 @@ jobs:
       - name: Cek versi Flutter
         run: flutter --version
 
+      - name: Pakai debug keystore TETAP (bukan yang acak per run)
+        # PENTING: tanpa langkah ini, setiap runner GitHub Actions membuat
+        # ~/.android/debug.keystore baru secara ACAK setiap kali build
+        # (karena APK "release" tanpa konfigurasi signing khusus otomatis
+        # ditandatangani pakai debug key bawaan Flutter). Akibatnya, APK
+        # dari build kemarin dan build hari ini punya TANDA TANGAN BERBEDA
+        # -> Android MENOLAK instalasi APK baru selama APK lama (dengan
+        # tanda tangan lain) masih terpasang di HP ("App not installed" /
+        # "conflicts with an existing package"). Solusinya: pakai SATU
+        # keystore debug yang sama, dikomit di repo (aman - ini keystore
+        # DEBUG standar, bukan untuk rilis Play Store, passwordnya memang
+        # publik/baku: "android").
+        run: |
+          mkdir -p ~/.android
+          cp android_signing/debug.keystore ~/.android/debug.keystore
+
       - name: Generate folder android/ (jika belum ada)
         run: |
           if [ ! -f "android/app/src/main/AndroidManifest.xml" ]; then

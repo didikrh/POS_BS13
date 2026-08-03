@@ -58,6 +58,20 @@ versi mayor yang lebih baru daripada yang benar-benar dipakai project
 ini. Ini berlaku untuk SEMUA dependency di project ini, bukan cuma
 `mobile_scanner`.
 
+### 🐛 DIPERBAIKI: APK gagal diinstal (signature mismatch antar-build)
+
+Build APK sudah berhasil (lolos tahap kompilasi Dart untuk pertama
+kalinya), tapi APK-nya gagal dipasang di HP. Penyebabnya: setiap
+runner GitHub Actions membuat *debug keystore* baru secara ACAK setiap
+kali build (karena APK "release" di project ini belum dikonfigurasi
+signing khusus, jadi otomatis memakai debug key bawaan) — sehingga
+APK dari build kemarin dan build hari ini punya tanda tangan berbeda,
+dan Android menolak menimpa aplikasi dengan tanda tangan yang beda.
+Solusi permanen: satu `debug.keystore` TETAP sekarang dikomit di
+`android_signing/debug.keystore` dan dipakai konsisten di setiap
+build (lihat bagian 9 - Troubleshooting untuk detail & langkah
+darurat kalau masih terlanjur stuck).
+
 Fitur baru yang ditambahkan pada paket ini: **export/import Excel**
 untuk data produk (lihat bagian 8).
 
@@ -73,6 +87,8 @@ pos_thermal_app/
 │   └── patch_android.py          # patch otomatis permission & minSdkVersion
 ├── docs/
 │   └── AndroidManifest_REFERENCE.xml   # referensi permission (fallback manual)
+├── android_signing/
+│   └── debug.keystore            # keystore debug TETAP - signature konsisten antar-build
 ├── (android/ SENGAJA TIDAK ADA di repo — dibuat otomatis saat build
 │    lewat `flutter create .`, baik di GitHub Actions maupun lokal.
 │    Jangan buat folder android/ kosong/manual di repo, karena akan
@@ -403,6 +419,27 @@ Android modern (tidak perlu permission penyimpanan klasik).
 
 ## 9. Troubleshooting
 
+- **APK "gagal diinstal" / "App not installed" / "conflicts with an
+  existing package"** → penyebab paling umum: HP Anda sudah pernah
+  terpasang APK dari build SEBELUMNYA, yang ditandatangani dengan
+  **debug key berbeda** (tiap runner GitHub Actions dulunya membuat
+  debug key baru secara acak setiap build, sebelum ada perbaikan di
+  bawah). Android menolak menimpa aplikasi dengan tanda tangan
+  (*signature*) yang berbeda dari yang terpasang.
+  - **Solusi cepat SEKARANG**: **uninstall dulu** aplikasi POS yang
+    sudah terpasang di HP, baru instal APK hasil build terbaru.
+  - **Solusi permanen (sudah diterapkan)**: workflow ini sekarang
+    memakai **satu debug keystore tetap** yang dikomit di
+    `android_signing/debug.keystore` (lihat step "Pakai debug
+    keystore TETAP" di `.github/workflows/build_apk.yml`) — jadi
+    SEMUA build ke depannya, dari mesin CI manapun dan kapanpun,
+    akan selalu memakai tanda tangan yang SAMA. Setelah update ini,
+    Anda seharusnya cukup **uninstall satu kali saja** (karena build
+    lama masih pakai key acak lama), setelah itu instal ulang APK
+    berikutnya tinggal menimpa tanpa perlu uninstall lagi.
+  - Keystore ini AMAN dikomit ke repo publik sekalipun — ini cuma
+    debug key standar (password baku `android`, bukan untuk rilis ke
+    Play Store), bukan credential rahasia.
 - **Printer tidak muncul di daftar Pengaturan** → pastikan sudah
   di-*pairing* lebih dulu lewat Pengaturan Bluetooth bawaan HP (di
   luar aplikasi), baru akan muncul sebagai "paired device".

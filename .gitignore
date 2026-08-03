@@ -21,6 +21,10 @@ android/local.properties
 android/**/GeneratedPluginRegistrant.java
 *.jks
 *.keystore
+# KECUALI debug keystore TETAP di bawah ini - SENGAJA dikomit ke repo
+# supaya signature APK konsisten antar-build (lihat README bagian
+# Troubleshooting: "App not installed" / signature mismatch).
+!android_signing/debug.keystore
 
 # iOS (jika suatu saat platform iOS ditambahkan)
 ios/Flutter/.last_build_id
