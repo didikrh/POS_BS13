@@ -18,6 +18,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _addrCtrl = TextEditingController();
   final _greetCtrl = TextEditingController();
   int _paperWidth = 58;
+  int _headerSize = 1;
 
   List<BluetoothDevice> _pairedDevices = [];
   BluetoothDevice? _selectedDevice;
@@ -39,6 +40,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _addrCtrl.text = s.storeAddress;
       _greetCtrl.text = s.footerGreeting;
       _paperWidth = s.paperWidthMm;
+      _headerSize = s.headerSize;
     });
   }
 
@@ -49,6 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       storeAddress: _addrCtrl.text.trim(),
       footerGreeting: _greetCtrl.text.trim(),
       paperWidthMm: _paperWidth,
+      headerSize: _headerSize,
       printerName: _selectedDevice?.name ?? _settings!.printerName,
       printerMac: _selectedDevice?.address ?? _settings!.printerMac,
     );
@@ -111,6 +114,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
             controller: _addrCtrl,
             decoration: const InputDecoration(labelText: 'Alamat Toko', border: OutlineInputBorder()),
             maxLines: 2,
+          ),
+          const SizedBox(height: 20),
+
+          Text('Ukuran Nama Toko di Struk',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          const Text(
+            'Kalau nama toko terasa kebesaran/kepotong di struk, coba ganti ke Normal.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          RadioListTile<int>(
+            title: const Text('Normal'),
+            subtitle: const Text('Ukuran sama seperti teks lain, hanya dicetak tebal.'),
+            value: 0,
+            groupValue: _headerSize,
+            onChanged: (v) => setState(() => _headerSize = v!),
+          ),
+          RadioListTile<int>(
+            title: const Text('Sedang (disarankan)'),
+            subtitle: const Text('2x lebih tinggi, lebar tetap normal.'),
+            value: 1,
+            groupValue: _headerSize,
+            onChanged: (v) => setState(() => _headerSize = v!),
+          ),
+          RadioListTile<int>(
+            title: const Text('Besar'),
+            subtitle: const Text('2x lebih tinggi DAN 2x lebih lebar (paling mencolok, tapi bisa terlihat kebesaran di kertas 58mm).'),
+            value: 2,
+            groupValue: _headerSize,
+            onChanged: (v) => setState(() => _headerSize = v!),
           ),
           const SizedBox(height: 20),
 

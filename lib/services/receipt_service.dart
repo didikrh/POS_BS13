@@ -22,7 +22,20 @@ class ReceiptService {
     // ---------------- HEADER (kustom) ----------------
     b.align(EscPosAlign.center);
     b.bold(true);
-    b.textSize(1, 1); // sedikit lebih besar untuk nama toko
+    // Ukuran header sekarang ikut Pengaturan (bisa dikustom user), bukan
+    // dipaksa 2x tinggi+lebar terus - itu yang bikin nama toko kelihatan
+    // "kebesaran" karena lebar tiap huruf ikut digandakan juga, bukan
+    // cuma tingginya.
+    switch (settings.headerSize) {
+      case 0: // Normal
+        b.textSize(0, 0);
+        break;
+      case 2: // Besar (2x tinggi + 2x lebar)
+        b.textSize(1, 1);
+        break;
+      default: // 1 = Sedang (2x tinggi saja, lebar tetap normal)
+        b.textSize(0, 1);
+    }
     b.line(settings.storeName);
     b.textSize(0, 0);
     b.bold(false);

@@ -6,6 +6,7 @@ import '../models/cashier.dart';
 import '../models/store_settings.dart';
 import '../models/pos_transaction.dart';
 import '../models/transaction_item.dart';
+import '../models/deposit_receipt.dart';
 
 /// ============================================================
 /// DATABASE HELPER (SQLite via sqflite)
@@ -40,9 +41,26 @@ class DatabaseHelper {
     final path = join(dbPath, 'pos_thermal.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 3,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  /// PENTING: HP yang sudah pernah install versi aplikasi sebelumnya (yang
+  /// belum punya kolom `header_size` dan/atau tabel Tanda Terima) TIDAK
+  /// BOLEH kehilangan data transaksi & produk yang sudah tersimpan - jadi
+  /// di sini cuma menambah kolom/tabel BARU, BUKAN drop & recreate tabel
+  /// yang sudah ada.
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute(
+        "ALTER TABLE store_settings ADD COLUMN header_size INTEGER NOT NULL DEFAULT 1;",
+      );
+    }
+    if (oldVersion < 3) {
+      await _createDepositReceiptTables(db);
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -74,7 +92,8 @@ class DatabaseHelper {
         footer_greeting TEXT NOT NULL,
         printer_name TEXT,
         printer_mac TEXT,
-        paper_width_mm INTEGER NOT NULL DEFAULT 58
+        paper_width_mm INTEGER NOT NULL DEFAULT 58,
+        header_size INTEGER NOT NULL DEFAULT 1
       );
     ''');
 
@@ -117,6 +136,42 @@ class DatabaseHelper {
     await db.insert('store_settings', StoreSettings().toMap());
     await db.insert('cashiers',
         Cashier(username: 'kasir1', pin: '1234', name: 'Kasir Toko').toMap());
+
+    await _createDepositReceiptTables(db);
+  }
+
+  /// Tabel untuk fitur "Tanda Terima" (transaksi NON-KASIR: klien setor/
+  /// titip barang). Sengaja terpisah total dari tabel `transactions` milik
+  /// kasir - beda struktur data & tujuan sama sekali.
+  Future<void> _createDepositReceiptTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS deposit_receipts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        receipt_no TEXT UNIQUE NOT NULL,
+        receipt_date TEXT NOT NULL,
+        client_name TEXT NOT NULL,
+        client_contact TEXT,
+        operator_name TEXT NOT NULL,
+        notes TEXT
+      );
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS deposit_receipt_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        receipt_id INTEGER NOT NULL,
+        item_name TEXT NOT NULL,
+        weight REAL NOT NULL,
+        weight_unit TEXT NOT NULL DEFAULT 'kg',
+        notes TEXT,
+        FOREIGN KEY (receipt_id) REFERENCES deposit_receipts (id)
+      );
+    ''');
+
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_deposit_date ON deposit_receipts (receipt_date);');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_deposititem_receiptid ON deposit_receipt_items (receipt_id);');
   }
 
   // ---------------- PRODUCTS ----------------
@@ -258,5 +313,61 @@ class DatabaseHelper {
     final ymd =
         '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
     return 'TRX$ymd-${seq.toString().padLeft(4, '0')}';
+  }
+
+  // ---------------- TANDA TERIMA (deposit/titip barang, non-kasir) ----------------
+
+  /// Simpan Tanda Terima + item barangnya sekaligus dalam SATU transaction
+  /// DB (atomik) - sama seperti saveTransaction() untuk kasir. TIDAK
+  /// mengurangi stok produk (barang titipan bukan barang dagangan toko).
+  Future<int> saveDepositReceipt(DepositReceipt receipt) async {
+    final db = await database;
+    return db.transaction<int>((txn) async {
+      final receiptId =
+          await txn.insert('deposit_receipts', receipt.toMap()..remove('id'));
+
+      for (final item in receipt.items) {
+        await txn.insert(
+          'deposit_receipt_items',
+          item.toMap()
+            ..remove('id')
+            ..['receipt_id'] = receiptId,
+        );
+      }
+      return receiptId;
+    });
+  }
+
+  Future<List<DepositReceipt>> getDepositReceiptsBetween(
+      DateTime from, DateTime to) async {
+    final db = await database;
+    final rows = await db.query(
+      'deposit_receipts',
+      where: 'receipt_date BETWEEN ? AND ?',
+      whereArgs: [from.toIso8601String(), to.toIso8601String()],
+      orderBy: 'receipt_date DESC',
+    );
+    return rows.map((e) => DepositReceipt.fromMap(e)).toList();
+  }
+
+  Future<List<DepositReceiptItem>> getItemsForDepositReceipt(
+      int receiptId) async {
+    final db = await database;
+    final rows = await db.query('deposit_receipt_items',
+        where: 'receipt_id = ?', whereArgs: [receiptId]);
+    return rows.map((e) => DepositReceiptItem.fromMap(e)).toList();
+  }
+
+  Future<String> nextDepositReceiptNo() async {
+    final now = DateTime.now();
+    final db = await database;
+    final countToday = Sqflite.firstIntValue(await db.rawQuery(
+      "SELECT COUNT(*) FROM deposit_receipts WHERE receipt_date LIKE ?",
+      ['${now.toIso8601String().substring(0, 10)}%'],
+    ));
+    final seq = (countToday ?? 0) + 1;
+    final ymd =
+        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+    return 'TT$ymd-${seq.toString().padLeft(4, '0')}';
   }
 }

@@ -1,0 +1,339 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../db/database_helper.dart';
+import '../models/deposit_receipt.dart';
+import '../services/deposit_receipt_service.dart';
+import '../services/bluetooth_printer_service.dart';
+import '../state/app_state.dart';
+
+const List<String> kWeightUnits = ['kg', 'gram', 'ton'];
+
+class _DraftItem {
+  final nameCtrl = TextEditingController();
+  final weightCtrl = TextEditingController();
+  final notesCtrl = TextEditingController();
+  String unit = 'kg';
+
+  void dispose() {
+    nameCtrl.dispose();
+    weightCtrl.dispose();
+    notesCtrl.dispose();
+  }
+}
+
+class DepositReceiptFormScreen extends StatefulWidget {
+  const DepositReceiptFormScreen({super.key});
+
+  @override
+  State<DepositReceiptFormScreen> createState() => _DepositReceiptFormScreenState();
+}
+
+class _DepositReceiptFormScreenState extends State<DepositReceiptFormScreen> {
+  final _clientNameCtrl = TextEditingController();
+  final _clientContactCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  final List<_DraftItem> _items = [_DraftItem()];
+  bool _processing = false;
+
+  @override
+  void dispose() {
+    _clientNameCtrl.dispose();
+    _clientContactCtrl.dispose();
+    _notesCtrl.dispose();
+    for (final it in _items) {
+      it.dispose();
+    }
+    super.dispose();
+  }
+
+  void _addItemRow() {
+    setState(() => _items.add(_DraftItem()));
+  }
+
+  void _removeItemRow(int index) {
+    setState(() {
+      _items[index].dispose();
+      _items.removeAt(index);
+    });
+  }
+
+  Future<void> _submit() async {
+    final clientName = _clientNameCtrl.text.trim();
+    if (clientName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nama Klien wajib diisi.')),
+      );
+      return;
+    }
+
+    // Validasi baris barang: nama & berat wajib diisi, berat harus angka > 0.
+    final parsedItems = <DepositReceiptItem>[];
+    for (var i = 0; i < _items.length; i++) {
+      final draft = _items[i];
+      final name = draft.nameCtrl.text.trim();
+      final weightStr = draft.weightCtrl.text.trim();
+      if (name.isEmpty && weightStr.isEmpty) continue; // baris kosong - lewati
+      if (name.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Baris ${i + 1}: Nama Barang wajib diisi.')),
+        );
+        return;
+      }
+      final weight = double.tryParse(weightStr.replaceAll(',', '.'));
+      if (weight == null || weight <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Baris ${i + 1}: Berat harus berupa angka lebih dari 0.')),
+        );
+        return;
+      }
+      parsedItems.add(DepositReceiptItem(
+        itemName: name,
+        weight: weight,
+        weightUnit: draft.unit,
+        notes: draft.notesCtrl.text.trim(),
+      ));
+    }
+
+    if (parsedItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Minimal isi 1 baris barang.')),
+      );
+      return;
+    }
+
+    setState(() => _processing = true);
+
+    // Pola yang SAMA seperti Checkout Kasir: seluruh proses dibungkus
+    // try/catch/finally supaya tombol TIDAK PERNAH macet berputar diam
+    // walau ada kegagalan (DB, printer, dsb) - ini pelajaran mahal dari
+    // bug yang sama persis di fitur kasir sebelumnya.
+    late final DepositReceipt receipt;
+    bool printed = false;
+    bool connected = false;
+    String? errorMessage;
+    String? printErrorDetail;
+
+    try {
+      final appState = context.read<AppState>();
+      final receiptNo = await DatabaseHelper.instance.nextDepositReceiptNo();
+      receipt = DepositReceipt(
+        receiptNo: receiptNo,
+        receiptDate: DateTime.now(),
+        clientName: clientName,
+        clientContact: _clientContactCtrl.text.trim(),
+        operatorName: appState.activeCashier?.name ?? '-',
+        notes: _notesCtrl.text.trim(),
+        items: parsedItems,
+      );
+
+      await DatabaseHelper.instance.saveDepositReceipt(receipt);
+
+      final settings = await DatabaseHelper.instance.getSettings();
+
+      try {
+        connected = await BluetoothPrinterService.instance
+            .isConnected()
+            .timeout(const Duration(seconds: 15), onTimeout: () => false);
+      } catch (_) {
+        connected = false;
+      }
+
+      if (connected) {
+        try {
+          printed = await DepositReceiptService.printDepositReceipt(
+                  receipt: receipt, settings: settings)
+              .timeout(const Duration(seconds: 10), onTimeout: () => false);
+        } catch (e) {
+          printed = false;
+          printErrorDetail = e.toString();
+        }
+      }
+    } catch (e) {
+      errorMessage = e.toString();
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+
+    if (!mounted) return;
+
+    if (errorMessage != null) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Tanda Terima Gagal Disimpan'),
+          content: Text(
+            'Terjadi kesalahan saat menyimpan:\n$errorMessage\n\n'
+            'Data belum tersimpan. Silakan coba lagi.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(printed
+            ? 'Tanda Terima Berhasil'
+            : connected
+                ? 'Tersimpan (Cetak Gagal)'
+                : 'Tersimpan (Printer Belum Terhubung)'),
+        content: Text(
+          printed
+              ? 'Tanda Terima "${receipt.receiptNo}" berhasil dicetak.'
+              : connected
+                  ? 'Data sudah tersimpan, namun gagal dicetak.'
+                      '${printErrorDetail != null ? '\n\nDetail: $printErrorDetail' : ''}'
+                      '\n\nBisa cetak ulang dari daftar Tanda Terima.'
+                  : 'Data sudah tersimpan, namun printer belum terhubung. '
+                      'Sambungkan printer di menu Pengaturan lalu cetak ulang dari daftar Tanda Terima.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // tutup dialog
+              Navigator.of(context).pop(true); // kembali, beri tahu perlu refresh
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Tanda Terima Baru')),
+      body: AbsorbPointer(
+        absorbing: _processing,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text('Identitas Klien', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _clientNameCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Nama Klien *', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _clientContactCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'No. HP / Alamat (opsional)',
+                  border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Barang Diterima',
+                      style: Theme.of(context).textTheme.titleMedium),
+                ),
+                TextButton.icon(
+                  onPressed: _addItemRow,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Tambah Baris'),
+                ),
+              ],
+            ),
+            ..._items.asMap().entries.map((entry) {
+              final index = entry.key;
+              final draft = entry.value;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text('Barang #${index + 1}',
+                                style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          if (_items.length > 1)
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.red),
+                              onPressed: () => _removeItemRow(index),
+                            ),
+                        ],
+                      ),
+                      TextField(
+                        controller: draft.nameCtrl,
+                        decoration: const InputDecoration(
+                            labelText: 'Nama Barang', border: OutlineInputBorder()),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: TextField(
+                              controller: draft.weightCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                  labelText: 'Berat', border: OutlineInputBorder()),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              initialValue: draft.unit,
+                              decoration:
+                                  const InputDecoration(border: OutlineInputBorder()),
+                              items: kWeightUnits
+                                  .map((u) =>
+                                      DropdownMenuItem(value: u, child: Text(u)))
+                                  .toList(),
+                              onChanged: (v) => setState(() => draft.unit = v!),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: draft.notesCtrl,
+                        decoration: const InputDecoration(
+                            labelText: 'Keterangan (opsional)',
+                            border: OutlineInputBorder()),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _notesCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Catatan Umum (opsional)', border: OutlineInputBorder()),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: _processing ? null : _submit,
+              icon: _processing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.print),
+              label: Text(_processing ? 'MEMPROSES...' : 'SIMPAN & CETAK TANDA TERIMA'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
