@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../db/database_helper.dart';
 import '../models/pos_transaction.dart';
+import '../models/store_settings.dart';
 import '../services/receipt_service.dart';
 import '../services/bluetooth_printer_service.dart';
 import '../state/app_state.dart';
@@ -20,6 +21,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _custAddrCtrl = TextEditingController();
   final _paidCtrl = TextEditingController();
   bool _processing = false;
+  bool _retryingPrint = false;
 
   static final _currency =
       NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
@@ -118,9 +120,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             _paidCtrl.text.replaceAll('.', '').replaceAll(',', '')) ??
         0;
 
-    // PosTransaction dibuat di luar try supaya tetap bisa dipakai untuk
-    // pesan sukses di bawah tanpa perlu deklarasi ulang.
+    // PosTransaction & StoreSettings dibuat di luar try supaya tetap bisa
+    // dipakai untuk tombol "Coba Cetak Lagi" pada dialog di bawah, tanpa
+    // perlu query ulang ke database.
     late final PosTransaction trx;
+    late final StoreSettings settings;
     bool printed = false;
     bool connected = false;
     String? errorMessage;
@@ -146,7 +150,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // jadi dipisah dari proses cetak yang lebih rawan gagal (Bluetooth).
       await DatabaseHelper.instance.saveTransaction(trx);
 
-      final settings = await DatabaseHelper.instance.getSettings();
+      settings = await DatabaseHelper.instance.getSettings();
 
       // isConnected() sekarang sudah mencoba beberapa kali secara internal
       // (lihat BluetoothPrinterService) - timeout luar ini cuma jaring
@@ -204,31 +208,73 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(printed
-            ? 'Transaksi Berhasil'
-            : connected
-                ? 'Transaksi Tersimpan (Cetak Gagal)'
-                : 'Transaksi Tersimpan (Printer Belum Terhubung)'),
-        content: Text(
-          printed
-              ? 'Struk "${trx.trxNo}" berhasil dicetak.'
-              : connected
-                  ? 'Data transaksi sudah tersimpan, namun struk gagal dicetak.'
-                      '${printErrorDetail != null ? '\n\nDetail: $printErrorDetail' : ''}'
-                      '\n\nCoba cetak ulang dari Riwayat Transaksi.'
-                  : 'Data transaksi sudah tersimpan, namun struk belum tercetak. '
-                      'Sambungkan printer di menu Pengaturan lalu cetak ulang dari Riwayat Transaksi.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // tutup dialog
-              Navigator.of(context).pop(); // kembali ke layar Kasir
-            },
-            child: const Text('OK'),
-          ),
-        ],
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          return AlertDialog(
+            title: Text(printed
+                ? 'Transaksi Berhasil'
+                : connected
+                    ? 'Transaksi Tersimpan (Cetak Gagal)'
+                    : 'Transaksi Tersimpan (Printer Belum Terhubung)'),
+            content: Text(
+              printed
+                  ? 'Struk "${trx.trxNo}" berhasil dicetak.'
+                  : connected
+                      ? 'Data transaksi sudah tersimpan, namun struk gagal dicetak.'
+                          '${printErrorDetail != null ? '\n\nDetail: $printErrorDetail' : ''}'
+                          '\n\nCoba tombol "Cetak Lagi" di bawah, atau cetak ulang'
+                          ' nanti dari menu Riwayat Transaksi.'
+                      : 'Data transaksi sudah tersimpan, namun struk belum tercetak.\n\n'
+                          'Kalau printer sudah/baru saja terhubung, tekan tombol'
+                          ' "Cetak Lagi" di bawah ini - tidak perlu pindah ke menu'
+                          ' Riwayat Transaksi.',
+            ),
+            actions: [
+              if (!printed)
+                TextButton.icon(
+                  icon: _retryingPrint
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.print, size: 18),
+                  label: Text(_retryingPrint ? 'Mencetak...' : 'Cetak Lagi'),
+                  onPressed: _retryingPrint
+                      ? null
+                      : () async {
+                          setDialogState(() => _retryingPrint = true);
+                          bool ok = false;
+                          try {
+                            ok = await ReceiptService.printReceipt(
+                                    trx: trx, settings: settings)
+                                .timeout(const Duration(seconds: 10),
+                                    onTimeout: () => false);
+                          } catch (e) {
+                            printErrorDetail = e.toString();
+                          }
+                          setDialogState(() {
+                            _retryingPrint = false;
+                            printed = ok;
+                            connected = true;
+                            if (!ok && printErrorDetail == null) {
+                              printErrorDetail =
+                                  'Percobaan cetak ulang masih gagal. Pastikan '
+                                  'printer menyala & tersambung di menu Pengaturan.';
+                            }
+                          });
+                        },
+                ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop(); // tutup dialog
+                  Navigator.of(context).pop(); // kembali ke layar Kasir
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

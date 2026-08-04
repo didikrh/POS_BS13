@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'state/app_state.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 
-void main() {
+Future<void> main() async {
+  // WAJIB: seluruh aplikasi memakai DateFormat/NumberFormat dengan locale
+  // 'id_ID' (format tanggal & mata uang Indonesia) di banyak tempat -
+  // receipt_service.dart, transaction_history_screen.dart, pos_screen.dart,
+  // checkout_screen.dart, dsb. Tanpa inisialisasi ini, PERTAMA KALI locale
+  // 'id_ID' dipakai di manapun akan melempar
+  // `LocaleDataException: Locale data has not been initialized`, yang
+  // sebelumnya bikin: (1) daftar Riwayat Transaksi gagal dirender/blank
+  // walau data-nya ada, dan (2) cetak struk gagal saat checkout.
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('id_ID', null);
   runApp(const PosApp());
 }
 

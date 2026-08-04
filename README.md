@@ -72,6 +72,63 @@ Solusi permanen: satu `debug.keystore` TETAP sekarang dikomit di
 build (lihat bagian 9 - Troubleshooting untuk detail & langkah
 darurat kalau masih terlanjur stuck).
 
+### 🐛 DIPERBAIKI: `LocaleDataException` (Riwayat Transaksi blank & cetak struk gagal)
+
+APK akhirnya berhasil diinstal, tapi muncul 2 gejala yang **akar
+masalahnya sama persis**: (1) layar Riwayat Transaksi menampilkan
+total & jumlah transaksi dengan benar di bagian atas, tapi daftar
+transaksinya sendiri kosong/blank; (2) saat checkout, muncul
+`LocaleDataException: Locale data has not been initialized, call
+initializeDateFormatting(<locale>)`. Penyebabnya: aplikasi memakai
+`DateFormat(pattern, 'id_ID')` di beberapa tempat (`receipt_service.dart`,
+`transaction_history_screen.dart`), tapi package `intl` **mewajibkan**
+locale non-default (`id_ID` bukan default `en_US`) diinisialisasi
+lebih dulu lewat `initializeDateFormatting()` sebelum dipakai -
+sebelumnya ini terlewat sama sekali. Baris daftar transaksi yang
+memanggil `DateFormat` langsung gagal saat proses render (makanya
+tampak "kosong" walau data-nya ada), dan proses cetak struk gagal di
+titik yang sama. Sudah diperbaiki dengan menambahkan
+`await initializeDateFormatting('id_ID', null);` di `main.dart`
+sebelum `runApp()` — dilakukan SEKALI di awal, berlaku untuk seluruh
+aplikasi.
+
+### 🐛 DIPERBAIKI (parsial): Kamera gagal dibuka di sebagian perangkat
+
+Error `MobileScannerErrorCode.genericError` dengan pesan native
+`Attempt to invoke virtual method 'java.lang.Class
+java.lang.Object.getClass()' on a null object reference` adalah
+masalah level CameraX/Camera2 HAL yang **spesifik ke
+chipset/vendor perangkat tertentu** (dikonfirmasi ada laporan identik
+di GitHub issue resmi `mobile_scanner` tanpa solusi kode yang pasti
+berhasil di semua kasus). Percobaan sebelumnya memaksa
+`cameraResolution: Size(1280, 720)` **terbukti tidak mencegah** crash
+ini di perangkat yang dilaporkan. Perubahan yang diterapkan:
+- Konfigurasi controller dikembalikan ke default CameraX (paling
+  teruji lintas perangkat), dan tombol "Coba Lagi" sekarang melakukan
+  **reset total** (buang controller lama, buat baru) - bukan cuma
+  restart controller yang sama yang mungkin state-nya sudah korup.
+- Ditambahkan tombol **"Ketik Manual Saja"** yang jelas di layar
+  error kamera, supaya operasional toko tidak terhenti kalau kamera
+  memang bermasalah di perangkat tertentu — seluruh fitur transaksi &
+  pencarian produk di aplikasi ini SELALU bisa dilakukan lewat ketik
+  manual tanpa scan sama sekali.
+- Catatan jujur: ini BUKAN jaminan 100% kamera akan berfungsi di
+  semua perangkat (akar masalahnya ada di luar kendali kode Dart
+  aplikasi ini), tapi aplikasi tidak lagi "buntu" kalau kamera
+  bermasalah - selalu ada jalur kerja lain yang tetap berfungsi.
+
+### ✨ DITAMBAHKAN: Tombol "Cetak Lagi" langsung di dialog checkout
+
+Sebelumnya, kalau cetak struk gagal saat checkout (mis. printer
+belum/putus tersambung), satu-satunya cara mencetak ulang adalah
+pindah ke menu Riwayat Transaksi — padahal menu itu sendiri sempat
+terkena bug blank di atas, membuat pengguna benar-benar buntu tanpa
+cara mencetak struk yang tertunda meski printer sudah tersambung lagi.
+Sekarang dialog hasil checkout punya tombol **"Cetak Lagi"** yang
+langsung mencoba cetak ulang saat itu juga (pakai data transaksi yang
+sudah ada di memori, tanpa perlu query ulang ke database atau pindah
+layar) — cocok dipakai begitu printer baru saja tersambung kembali.
+
 Fitur baru yang ditambahkan pada paket ini: **export/import Excel**
 untuk data produk (lihat bagian 8).
 
@@ -419,6 +476,20 @@ Android modern (tidak perlu permission penyimpanan klasik).
 
 ## 9. Troubleshooting
 
+- **`LocaleDataException: Locale data has not been initialized`**,
+  atau **Riwayat Transaksi tampak blank padahal ada data** → pastikan
+  `main.dart` memanggil
+  `await initializeDateFormatting('id_ID', null);` SEBELUM
+  `runApp()`. Kalau Anda menambah locale lain (misal `en_US`) di
+  tempat baru, locale itu juga perlu diinisialisasi dulu dengan cara
+  yang sama sebelum dipakai di `DateFormat(pattern, '<locale>')`
+  manapun di aplikasi.
+- **"Kamera gagal dibuka" / `MobileScannerErrorCode.genericError`**
+  → masalah level CameraX/Camera2 HAL yang spesifik ke sebagian
+  perangkat, di luar kendali kode Dart aplikasi ini (lihat detail di
+  bagian 0). Gunakan tombol "Ketik Manual Saja" di layar error
+  sebagai jalan keluar — seluruh fitur aplikasi tetap berfungsi tanpa
+  kamera.
 - **APK "gagal diinstal" / "App not installed" / "conflicts with an
   existing package"** → penyebab paling umum: HP Anda sudah pernah
   terpasang APK dari build SEBELUMNYA, yang ditandatangani dengan
