@@ -7,6 +7,7 @@ import '../models/store_settings.dart';
 import '../models/pos_transaction.dart';
 import '../models/transaction_item.dart';
 import '../models/deposit_receipt.dart';
+import '../models/client.dart';
 
 /// ============================================================
 /// DATABASE HELPER (SQLite via sqflite)
@@ -41,17 +42,15 @@ class DatabaseHelper {
     final path = join(dbPath, 'pos_thermal.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
-  /// PENTING: HP yang sudah pernah install versi aplikasi sebelumnya (yang
-  /// belum punya kolom `header_size` dan/atau tabel Tanda Terima) TIDAK
-  /// BOLEH kehilangan data transaksi & produk yang sudah tersimpan - jadi
-  /// di sini cuma menambah kolom/tabel BARU, BUKAN drop & recreate tabel
-  /// yang sudah ada.
+  /// PENTING: HP yang sudah pernah install versi aplikasi sebelumnya TIDAK
+  /// BOLEH kehilangan data yang sudah tersimpan - jadi di sini cuma
+  /// menambah kolom/tabel BARU, BUKAN drop & recreate tabel yang sudah ada.
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute(
@@ -60,6 +59,9 @@ class DatabaseHelper {
     }
     if (oldVersion < 3) {
       await _createDepositReceiptTables(db);
+    }
+    if (oldVersion < 4) {
+      await _createClientsTable(db);
     }
   }
 
@@ -138,6 +140,23 @@ class DatabaseHelper {
         Cashier(username: 'kasir1', pin: '1234', name: 'Kasir Toko').toMap());
 
     await _createDepositReceiptTables(db);
+    await _createClientsTable(db);
+  }
+
+  /// Tabel Klien/Pelanggan/Nasabah BERSAMA - dipakai baik transaksi kasir
+  /// maupun Tanda Terima. `name COLLATE NOCASE UNIQUE` supaya "Budi" dan
+  /// "budi" dianggap klien yang SAMA (tidak dobel), dan supaya lookup
+  /// auto-tambah-jika-belum-ada bisa dilakukan lewat INSERT OR IGNORE.
+  Future<void> _createClientsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS clients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL COLLATE NOCASE,
+        contact TEXT,
+        address TEXT,
+        UNIQUE (name COLLATE NOCASE)
+      );
+    ''');
   }
 
   /// Tabel untuk fitur "Tanda Terima" (transaksi NON-KASIR: klien setor/
@@ -211,6 +230,18 @@ class DatabaseHelper {
     final db = await database;
     final rows =
         await db.query('products', where: 'code = ?', whereArgs: [code]);
+    if (rows.isEmpty) return null;
+    return Product.fromMap(rows.first);
+  }
+
+  /// Cari produk berdasarkan NAMA (case-insensitive) - dipakai untuk
+  /// mencocokkan barang setoran Tanda Terima dengan produk yang sudah ada
+  /// di Master Produk, supaya stoknya nambah ke produk yang SAMA alih-alih
+  /// bikin produk duplikat tiap kali klien setor barang yang sama.
+  Future<Product?> getProductByName(String name) async {
+    final db = await database;
+    final rows = await db.query('products',
+        where: 'name = ? COLLATE NOCASE', whereArgs: [name]);
     if (rows.isEmpty) return null;
     return Product.fromMap(rows.first);
   }
@@ -320,22 +351,96 @@ class DatabaseHelper {
   /// Simpan Tanda Terima + item barangnya sekaligus dalam SATU transaction
   /// DB (atomik) - sama seperti saveTransaction() untuk kasir. TIDAK
   /// mengurangi stok produk (barang titipan bukan barang dagangan toko).
+  /// Simpan Tanda Terima + item barangnya sekaligus dalam SATU transaction
+  /// DB (atomik) - sama seperti saveTransaction() untuk kasir.
+  ///
+  /// SETIAP barang yang disetor OTOMATIS masuk/ditambahkan ke stok Master
+  /// Produk supaya bisa langsung dijual (sesuai permintaan): kalau sudah
+  /// ada produk dengan NAMA yang sama (case-insensitive), stoknya
+  /// ditambah sebesar berat setoran (dikonversi ke satuan produk yang
+  /// sudah ada); kalau belum ada, dibuatkan produk baru otomatis dengan
+  /// harga jual 0 (SENGAJA 0 - aplikasi tidak tahu harga jual yang benar,
+  /// harus diisi manual oleh staf di Master Produk sebelum dijual).
   Future<int> saveDepositReceipt(DepositReceipt receipt) async {
     final db = await database;
     return db.transaction<int>((txn) async {
       final receiptId =
           await txn.insert('deposit_receipts', receipt.toMap()..remove('id'));
 
-      for (final item in receipt.items) {
+      for (var i = 0; i < receipt.items.length; i++) {
+        final item = receipt.items[i];
         await txn.insert(
           'deposit_receipt_items',
           item.toMap()
             ..remove('id')
             ..['receipt_id'] = receiptId,
         );
+        await _upsertProductStockFromDeposit(txn, item, i);
       }
+
+      // Klien juga otomatis tercatat/ter-update di daftar Klien bersama.
+      await _upsertClient(txn,
+          name: receipt.clientName, contact: receipt.clientContact);
+
       return receiptId;
     });
+  }
+
+  /// Tambahkan berat barang setoran ke stok produk yang sudah ada (kalau
+  /// namanya cocok), atau buat produk baru otomatis kalau belum ada sama
+  /// sekali. Berat dikonversi ke satuan produk yang SUDAH ADA supaya
+  /// penjumlahan stoknya benar walau satuan di form Tanda Terima beda
+  /// (mis. setoran dalam gram, produk sudah tercatat dalam kg).
+  Future<void> _upsertProductStockFromDeposit(
+      DatabaseExecutor txn, DepositReceiptItem item, int itemIndex) async {
+    final rows = await txn.query('products',
+        where: 'name = ? COLLATE NOCASE', whereArgs: [item.itemName]);
+
+    if (rows.isEmpty) {
+      // Kode dibuat otomatis dari nama+waktu+indeks barang supaya pasti
+      // unik tanpa perlu staf mengisi apa pun dulu. Indeks WAJIB
+      // disertakan - kalau cuma pakai timestamp milidetik, 2+ barang baru
+      // yang diproses dalam satu Tanda Terima yang sama bisa kebetulan
+      // dapat kode identik (loop insert-nya cepat, bisa dalam milidetik
+      // yang sama), melanggar UNIQUE constraint dan menggagalkan seluruh
+      // transaksi penyimpanan.
+      final autoCode =
+          'TTP-${DateTime.now().millisecondsSinceEpoch}-$itemIndex';
+      await txn.insert(
+        'products',
+        Product(
+          code: autoCode,
+          name: item.itemName,
+          price: 0,
+          stock: item.weight,
+          unit: item.weightUnit,
+        ).toMap()
+          ..remove('id'),
+      );
+      return;
+    }
+
+    final existing = Product.fromMap(rows.first);
+    final convertedWeight =
+        _convertWeight(item.weight, item.weightUnit, existing.unit);
+    await txn.update(
+      'products',
+      {'stock': existing.stock + convertedWeight},
+      where: 'id = ?',
+      whereArgs: [existing.id],
+    );
+  }
+
+  /// Konversi berat antar satuan kg/gram/ton. Kalau satuan tujuan bukan
+  /// salah satu dari ketiganya (mis. produk lama satuannya "pcs"), berat
+  /// ditambahkan APA ADANYA tanpa konversi - lebih baik daripada memaksa
+  /// konversi yang tidak masuk akal secara satuan.
+  double _convertWeight(double value, String fromUnit, String toUnit) {
+    if (fromUnit == toUnit) return value;
+    const toKg = {'kg': 1.0, 'gram': 0.001, 'ton': 1000.0};
+    if (!toKg.containsKey(fromUnit) || !toKg.containsKey(toUnit)) return value;
+    final valueInKg = value * toKg[fromUnit]!;
+    return valueInKg / toKg[toUnit]!;
   }
 
   Future<List<DepositReceipt>> getDepositReceiptsBetween(
@@ -369,5 +474,97 @@ class DatabaseHelper {
     final ymd =
         '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
     return 'TT$ymd-${seq.toString().padLeft(4, '0')}';
+  }
+
+  // ---------------- CLIENTS (klien/pelanggan/nasabah bersama) ----------------
+
+  /// Cari-atau-buat klien berdasarkan nama (case-insensitive). Menerima
+  /// DatabaseExecutor (bukan Database) supaya bisa dipanggil DI DALAM
+  /// transaction (Tanda Terima) MAUPUN standalone (transaksi kasir).
+  Future<int> _upsertClient(DatabaseExecutor txn,
+      {required String name, String contact = '', String address = ''}) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return -1; // tidak ada nama - tidak dicatat
+
+    final rows = await txn.query('clients',
+        where: 'name = ? COLLATE NOCASE', whereArgs: [trimmedName]);
+
+    if (rows.isEmpty) {
+      return txn.insert('clients', {
+        'name': trimmedName,
+        'contact': contact,
+        'address': address,
+      });
+    }
+
+    final existing = rows.first;
+    final existingId = existing['id'] as int;
+    // Lengkapi kontak/alamat yang masih kosong - JANGAN timpa data yang
+    // sudah pernah diisi sebelumnya.
+    final updates = <String, dynamic>{};
+    final currentContact = (existing['contact'] as String?) ?? '';
+    final currentAddress = (existing['address'] as String?) ?? '';
+    if (currentContact.isEmpty && contact.trim().isNotEmpty) {
+      updates['contact'] = contact.trim();
+    }
+    if (currentAddress.isEmpty && address.trim().isNotEmpty) {
+      updates['address'] = address.trim();
+    }
+    if (updates.isNotEmpty) {
+      await txn.update('clients', updates, where: 'id = ?', whereArgs: [existingId]);
+    }
+    return existingId;
+  }
+
+  /// Versi PUBLIC dari _upsertClient - dipanggil dari luar (mis. saat
+  /// transaksi kasir selesai disimpan) untuk auto-tambah klien baru.
+  Future<int> upsertClientGetId(
+      {required String name, String contact = '', String address = ''}) async {
+    final db = await database;
+    return _upsertClient(db, name: name, contact: contact, address: address);
+  }
+
+  Future<List<Client>> getAllClients({String? search}) async {
+    final db = await database;
+    final rows = await db.query(
+      'clients',
+      where: search != null && search.isNotEmpty ? 'name LIKE ?' : null,
+      whereArgs: search != null && search.isNotEmpty ? ['%$search%'] : null,
+      orderBy: 'name ASC',
+    );
+    return rows.map((e) => Client.fromMap(e)).toList();
+  }
+
+  Future<Client?> getClientByName(String name) async {
+    final db = await database;
+    final rows = await db
+        .query('clients', where: 'name = ? COLLATE NOCASE', whereArgs: [name]);
+    if (rows.isEmpty) return null;
+    return Client.fromMap(rows.first);
+  }
+
+  /// Simpan klien dari Excel import - berbeda dari [upsertClientGetId]:
+  /// yang ini MENIMPA kontak/alamat dengan data baru dari file (karena
+  /// import Excel memang alat untuk EDIT MASSAL yang disengaja user),
+  /// bukan sekadar melengkapi data yang masih kosong.
+  Future<int> saveClientFromImport(
+      {required String name, String contact = '', String address = ''}) async {
+    final db = await database;
+    final trimmedName = name.trim();
+    final existing = await getClientByName(trimmedName);
+    if (existing != null) {
+      await db.update(
+        'clients',
+        {'contact': contact, 'address': address},
+        where: 'id = ?',
+        whereArgs: [existing.id],
+      );
+      return existing.id!;
+    }
+    return db.insert('clients', {
+      'name': trimmedName,
+      'contact': contact,
+      'address': address,
+    });
   }
 }

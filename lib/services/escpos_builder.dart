@@ -55,6 +55,50 @@ class EscPosBuilder {
     _buf.add(latin1.encode(safe));
   }
 
+  /// Pecah teks panjang jadi beberapa baris pas lebar kertas TANPA
+  /// memenggal di tengah kata. Tanpa ini, printer memotong mentah persis
+  /// di batas karakter kertas (mis. "...bukti sa" lalu baris baru "h") -
+  /// itu penyebab pemenggalan kata yang aneh di struk.
+  List<String> wrapText(String s, {int? width}) {
+    final w = width ?? charsPerLineNormal;
+    final words = s.split(' ');
+    final lines = <String>[];
+    var current = '';
+    for (final word in words) {
+      if (word.length > w) {
+        // Satu kata itu sendiri lebih panjang dari lebar kertas (jarang
+        // terjadi) - terpaksa dipotong paksa supaya tidak overflow.
+        if (current.isNotEmpty) {
+          lines.add(current);
+          current = '';
+        }
+        var remaining = word;
+        while (remaining.length > w) {
+          lines.add(remaining.substring(0, w));
+          remaining = remaining.substring(w);
+        }
+        current = remaining;
+        continue;
+      }
+      final candidate = current.isEmpty ? word : '$current $word';
+      if (candidate.length > w) {
+        lines.add(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current.isNotEmpty) lines.add(current);
+    return lines;
+  }
+
+  /// Cetak teks panjang yang otomatis dipecah per kata (lihat [wrapText]).
+  void lineWrapped(String s, {int? width}) {
+    for (final l in wrapText(s, width: width)) {
+      line(l);
+    }
+  }
+
   void line(String s) {
     text(s);
     newline();

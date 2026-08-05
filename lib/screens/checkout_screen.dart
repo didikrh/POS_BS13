@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../db/database_helper.dart';
 import '../models/pos_transaction.dart';
+import '../models/client.dart';
 import '../models/store_settings.dart';
 import '../services/receipt_service.dart';
 import '../services/bluetooth_printer_service.dart';
@@ -47,13 +48,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           Text('Data Pelanggan (opsional)',
               style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
-          TextField(
-            controller: _custNameCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Nama Pelanggan',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
+          // Autocomplete dari daftar Klien tersimpan - kalau nama yang
+          // diketik cocok dengan klien lama, tinggal pilih dan Alamat
+          // otomatis terisi. Kalau tidak dipilih (nama baru), klien baru
+          // otomatis tercatat saat transaksi disimpan (lihat _processPayment).
+          Autocomplete<Client>(
+            displayStringForOption: (c) => c.name,
+            optionsBuilder: (value) async {
+              if (value.text.trim().isEmpty) return const Iterable<Client>.empty();
+              return DatabaseHelper.instance.getAllClients(search: value.text.trim());
+            },
+            fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+              return TextField(
+                controller: controller,
+                focusNode: focusNode,
+                onChanged: (v) => _custNameCtrl.text = v,
+                decoration: const InputDecoration(
+                  labelText: 'Nama Pelanggan',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              );
+            },
+            onSelected: (client) {
+              _custNameCtrl.text = client.name;
+              if (client.address.isNotEmpty) _custAddrCtrl.text = client.address;
+            },
           ),
           const SizedBox(height: 8),
           TextField(
@@ -149,6 +169,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Simpan transaksi dulu - ini yang PALING PENTING untuk tidak hilang,
       // jadi dipisah dari proses cetak yang lebih rawan gagal (Bluetooth).
       await DatabaseHelper.instance.saveTransaction(trx);
+
+      // Klien otomatis tercatat di daftar Klien bersama kalau namanya
+      // diisi (dan belum ada) - supaya bisa dipakai lagi lewat autocomplete
+      // di transaksi berikutnya, baik kasir maupun Tanda Terima.
+      if (trx.customerName.trim().isNotEmpty) {
+        await DatabaseHelper.instance.upsertClientGetId(
+          name: trx.customerName,
+          address: trx.customerAddress,
+        );
+      }
 
       settings = await DatabaseHelper.instance.getSettings();
 

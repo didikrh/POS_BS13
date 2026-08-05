@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../db/database_helper.dart';
+import '../models/client.dart';
 import '../models/deposit_receipt.dart';
 import '../services/deposit_receipt_service.dart';
 import '../services/bluetooth_printer_service.dart';
@@ -219,10 +220,29 @@ class _DepositReceiptFormScreenState extends State<DepositReceiptFormScreen> {
           children: [
             Text('Identitas Klien', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            TextField(
-              controller: _clientNameCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Nama Klien *', border: OutlineInputBorder()),
+            // Autocomplete dari daftar Klien tersimpan (sama dengan yang
+            // dipakai transaksi kasir) - pilih klien lama supaya kontak
+            // otomatis terisi, atau ketik nama baru (otomatis tercatat
+            // sebagai klien baru saat Tanda Terima disimpan).
+            Autocomplete<Client>(
+              displayStringForOption: (c) => c.name,
+              optionsBuilder: (value) async {
+                if (value.text.trim().isEmpty) return const Iterable<Client>.empty();
+                return DatabaseHelper.instance.getAllClients(search: value.text.trim());
+              },
+              fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                return TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  onChanged: (v) => _clientNameCtrl.text = v,
+                  decoration: const InputDecoration(
+                      labelText: 'Nama Klien *', border: OutlineInputBorder()),
+                );
+              },
+              onSelected: (client) {
+                _clientNameCtrl.text = client.name;
+                if (client.contact.isNotEmpty) _clientContactCtrl.text = client.contact;
+              },
             ),
             const SizedBox(height: 8),
             TextField(

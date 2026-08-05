@@ -47,9 +47,11 @@ class ReceiptService {
     b.line('Tanggal   : ${_dateFmt.format(trx.trxDate)}');
     b.line('Kasir     : ${trx.cashierName}');
     if (trx.customerName.trim().isNotEmpty) {
-      b.line('Pelanggan : ${trx.customerName}');
+      b.line('Pelanggan :');
+      b.lineWrapped(trx.customerName);
       if (trx.customerAddress.trim().isNotEmpty) {
-        b.line('Alamat    : ${trx.customerAddress}');
+        b.line('Alamat    :');
+        b.lineWrapped(trx.customerAddress);
       }
     }
     b.divider();

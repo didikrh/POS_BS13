@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../db/database_helper.dart';
 import '../models/store_settings.dart';
 import '../services/bluetooth_printer_service.dart';
+import '../services/excel_client_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -24,6 +25,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   BluetoothDevice? _selectedDevice;
   bool _connected = false;
   bool _loadingPrinter = false;
+  bool _clientExcelBusy = false;
 
   @override
   void initState() {
@@ -89,6 +91,124 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : 'Gagal terhubung ke ${device.name}. Pastikan printer menyala & sudah di-pairing di Pengaturan Bluetooth HP.'),
     ));
     if (ok) _saveSettings();
+  }
+
+  Future<void> _exportClientTemplate() async {
+    setState(() => _clientExcelBusy = true);
+    bool ok = false;
+    String? error;
+    try {
+      ok = await ExcelClientService.exportTemplate();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => _clientExcelBusy = false);
+    }
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal membuat template: $error')));
+    } else if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Template Excel berhasil disimpan. Silakan isi lalu import kembali.'),
+      ));
+    }
+  }
+
+  Future<void> _exportClientData() async {
+    setState(() => _clientExcelBusy = true);
+    bool ok = false;
+    String? error;
+    try {
+      ok = await ExcelClientService.exportData();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => _clientExcelBusy = false);
+    }
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal export data: $error')));
+    } else if (ok) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Data klien berhasil diexport.')));
+    }
+  }
+
+  Future<void> _importClientExcel() async {
+    setState(() => _clientExcelBusy = true);
+    ClientExcelImportResult? result;
+    String? error;
+    try {
+      result = await ExcelClientService.importFromExcel();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => _clientExcelBusy = false);
+    }
+
+    if (!mounted) return;
+
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal import: $error')));
+      return;
+    }
+    if (result == null) return; // user membatalkan pemilihan file
+
+    if (!result.sukses) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Import Gagal'),
+          content: Text(result!.errorFatal!),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Import Selesai'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('✅ ${result!.ditambahkan} klien baru ditambahkan.'),
+              Text('🔄 ${result.diperbarui} klien diperbarui.'),
+              if (result.dilewati.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('⚠️ ${result.dilewati.length} baris dilewati:',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: result.dilewati.length,
+                    itemBuilder: (_, i) {
+                      final e = result!.dilewati[i];
+                      return Text('  Baris ${e.baris}: ${e.alasan}',
+                          style: const TextStyle(fontSize: 12));
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+        ],
+      ),
+    );
   }
 
   @override
@@ -216,6 +336,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     : null,
                 onTap: () => _connectPrinter(d),
               )),
+
+          const Divider(height: 40),
+
+          Text('Kelola Data Klien', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          const Text(
+            'Export/import daftar Klien lewat Excel supaya pengisian data '
+            'banyak klien sekaligus bisa dilakukan dari laptop/komputer.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          if (_clientExcelBusy) const LinearProgressIndicator(),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _clientExcelBusy ? null : _exportClientTemplate,
+                icon: const Icon(Icons.description_outlined, size: 18),
+                label: const Text('Unduh Template'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _clientExcelBusy ? null : _exportClientData,
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('Export Data'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _clientExcelBusy ? null : _importClientExcel,
+                icon: const Icon(Icons.upload_file, size: 18),
+                label: const Text('Import dari Excel'),
+              ),
+            ],
+          ),
         ],
       ),
     );

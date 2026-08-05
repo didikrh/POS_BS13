@@ -44,13 +44,14 @@ class DepositReceiptService {
 
     // ---------------- INFO TRANSAKSI ----------------
     b.align(EscPosAlign.left);
-    b.line('No. Tanda Terima : ${receipt.receiptNo}');
-    b.line('Tanggal          : ${_dateFmt.format(receipt.receiptDate)}');
-    b.line('Petugas          : ${receipt.operatorName}');
+    b.line('No. TT  : ${receipt.receiptNo}');
+    b.line('Tanggal : ${_dateFmt.format(receipt.receiptDate)}');
+    b.line('Petugas : ${receipt.operatorName}');
     b.divider();
 
     // ---------------- IDENTITAS KLIEN ----------------
-    b.line('Nama Klien : ${receipt.clientName}');
+    b.line('Nama Klien :');
+    b.lineWrapped(receipt.clientName);
     if (receipt.clientContact.trim().isNotEmpty) {
       b.line('Kontak     : ${receipt.clientContact}');
     }
@@ -58,14 +59,14 @@ class DepositReceiptService {
 
     // ---------------- DAFTAR BARANG ----------------
     b.bold(true);
-    b.line('Barang Diterima:');
+    b.line('Barang Disetor/Diserahkan:');
     b.bold(false);
     for (final item in receipt.items) {
-      b.line(item.itemName);
+      b.lineWrapped(item.itemName);
       final beratStr = '${_weightStr(item.weight)} ${item.weightUnit}';
       b.twoColumns(beratStr, '');
       if (item.notes.trim().isNotEmpty) {
-        b.line('  Ket: ${item.notes}');
+        b.lineWrapped('  Ket: ${item.notes}');
       }
     }
     b.divider();
@@ -76,7 +77,7 @@ class DepositReceiptService {
     if (receipt.notes.trim().isNotEmpty) {
       b.divider();
       b.line('Catatan:');
-      b.line(receipt.notes);
+      b.lineWrapped(receipt.notes);
     }
     b.divider();
 
@@ -101,8 +102,7 @@ class DepositReceiptService {
       // QR gagal dibuat/dirender - lanjutkan tanpa QR.
     }
 
-    b.line('Tanda terima ini adalah bukti sah');
-    b.line('penyetoran/penitipan barang.');
+    b.lineWrapped('Tanda terima ini adalah bukti sah penyetoran/penitipan barang.');
     b.feed(3);
     b.cutPaper();
 

@@ -5,6 +5,7 @@ import '../db/database_helper.dart';
 import '../models/deposit_receipt.dart';
 import '../services/deposit_receipt_service.dart';
 import '../services/bluetooth_printer_service.dart';
+import '../services/excel_deposit_service.dart';
 import 'deposit_receipt_form_screen.dart';
 
 class DepositReceiptListScreen extends StatefulWidget {
@@ -20,6 +21,131 @@ class DepositReceiptListScreenState extends State<DepositReceiptListScreen> {
   DateTime _to = DateTime.now();
   static final _dateFmt = DateFormat('dd/MM/yyyy HH:mm', 'id_ID');
   int? _printingId;
+  bool _excelBusy = false;
+
+  Future<void> _exportDepositTemplate() async {
+    setState(() => _excelBusy = true);
+    bool ok = false;
+    String? error;
+    try {
+      ok = await ExcelDepositReceiptService.exportTemplate();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => _excelBusy = false);
+    }
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal membuat template: $error')));
+    } else if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Template Excel berhasil disimpan. Silakan isi lalu import kembali.'),
+      ));
+    }
+  }
+
+  Future<void> _exportDepositData() async {
+    setState(() => _excelBusy = true);
+    bool ok = false;
+    String? error;
+    try {
+      ok = await ExcelDepositReceiptService.exportData();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => _excelBusy = false);
+    }
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal export data: $error')));
+    } else if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Data Tanda Terima berhasil diexport.')));
+    }
+  }
+
+  Future<void> _importDepositExcel() async {
+    setState(() => _excelBusy = true);
+    DepositExcelImportResult? result;
+    String? error;
+    try {
+      result = await ExcelDepositReceiptService.importFromExcel();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => _excelBusy = false);
+    }
+
+    if (!mounted) return;
+
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal import: $error')));
+      return;
+    }
+    if (result == null) return; // user membatalkan pemilihan file
+
+    if (!result.sukses) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Import Gagal'),
+          content: Text(result!.errorFatal!),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+          ],
+        ),
+      );
+      return;
+    }
+
+    await _load();
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Import Selesai'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('✅ ${result!.ditambahkan} Tanda Terima baru dibuat.'),
+              const Text(
+                'Catatan: setiap baris Excel dibuat sebagai Tanda Terima '
+                'terpisah (satu barang per Tanda Terima).',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              if (result.dilewati.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('⚠️ ${result.dilewati.length} baris dilewati:',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: result.dilewati.length,
+                    itemBuilder: (_, i) {
+                      final e = result!.dilewati[i];
+                      return Text('  Baris ${e.baris}: ${e.alasan}',
+                          style: const TextStyle(fontSize: 12));
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -141,7 +267,57 @@ class DepositReceiptListScreenState extends State<DepositReceiptListScreen> {
             onPressed: _pickRange,
             tooltip: 'Ubah rentang tanggal',
           ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.description_outlined),
+            tooltip: 'Export / Import Excel',
+            onSelected: (value) {
+              switch (value) {
+                case 'template':
+                  _exportDepositTemplate();
+                  break;
+                case 'export':
+                  _exportDepositData();
+                  break;
+                case 'import':
+                  _importDepositExcel();
+                  break;
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'template',
+                child: ListTile(
+                  leading: Icon(Icons.file_download_outlined),
+                  title: Text('Export Template Kosong'),
+                  subtitle: Text('Untuk diisi lalu diimpor kembali'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'export',
+                child: ListTile(
+                  leading: Icon(Icons.download),
+                  title: Text('Export Semua Data'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'import',
+                child: ListTile(
+                  leading: Icon(Icons.upload_file),
+                  title: Text('Import dari Excel'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
         ],
+        bottom: _excelBusy
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(4),
+                child: LinearProgressIndicator(),
+              )
+            : null,
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openForm,
