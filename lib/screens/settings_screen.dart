@@ -5,6 +5,7 @@ import '../db/database_helper.dart';
 import '../models/store_settings.dart';
 import '../services/bluetooth_printer_service.dart';
 import '../services/excel_client_service.dart';
+import 'cashier_management_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -132,7 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           .showSnackBar(SnackBar(content: Text('Gagal export data: $error')));
     } else if (ok) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Data klien berhasil diexport.')));
+          .showSnackBar(const SnackBar(content: Text('Data kastamer berhasil diexport.')));
     }
   }
 
@@ -182,8 +183,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('✅ ${result!.ditambahkan} klien baru ditambahkan.'),
-              Text('🔄 ${result.diperbarui} klien diperbarui.'),
+              Text('✅ ${result!.ditambahkan} kastamer baru ditambahkan.'),
+              Text('🔄 ${result.diperbarui} kastamer diperbarui.'),
               if (result.dilewati.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text('⚠️ ${result.dilewati.length} baris dilewati:',
@@ -222,6 +223,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Text('Data Petugas/Kasir', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          const Text(
+            'Ubah nama petugas/kasir supaya tidak selalu tertulis "Kasir Toko" '
+            'di struk & Tanda Terima - tiap petugas bisa punya nama sendiri.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CashierManagementScreen()),
+            ),
+            icon: const Icon(Icons.badge_outlined, size: 18),
+            label: const Text('Kelola Petugas/Kasir'),
+          ),
+          const Divider(height: 40),
+
           Text('Informasi Toko (Header Struk)',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -339,11 +357,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const Divider(height: 40),
 
-          Text('Kelola Data Klien', style: Theme.of(context).textTheme.titleMedium),
+          Text('Kelola Data Kastamer', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
           const Text(
-            'Export/import daftar Klien lewat Excel supaya pengisian data '
-            'banyak klien sekaligus bisa dilakukan dari laptop/komputer.',
+            'Export/import daftar Kastamer lewat Excel supaya pengisian data '
+            'banyak kastamer sekaligus bisa dilakukan dari laptop/komputer.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 8),

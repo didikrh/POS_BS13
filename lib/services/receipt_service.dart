@@ -47,7 +47,7 @@ class ReceiptService {
     b.line('Tanggal   : ${_dateFmt.format(trx.trxDate)}');
     b.line('Kasir     : ${trx.cashierName}');
     if (trx.customerName.trim().isNotEmpty) {
-      b.line('Pelanggan :');
+      b.line('Kastamer :');
       b.lineWrapped(trx.customerName);
       if (trx.customerAddress.trim().isNotEmpty) {
         b.line('Alamat    :');
@@ -61,7 +61,7 @@ class ReceiptService {
       b.line(item.productName);
       final qtyPriceStr =
           '${_qtyStr(item.qty)} x ${_currency.format(item.price)}';
-      b.twoColumns(qtyPriceStr, _currency.format(item.subtotal));
+      b.twoColumns('  $qtyPriceStr', _currency.format(item.subtotal));
     }
     b.divider();
 
@@ -87,7 +87,7 @@ class ReceiptService {
     try {
       final qrPayload =
           'TRX:${trx.trxNo}|TGL:${trx.trxDate.toIso8601String()}|TOTAL:${trx.total.toStringAsFixed(0)}|KASIR:${trx.cashierName}';
-      b.qrImage(qrPayload, scale: 3);
+      b.qrImage(qrPayload, targetSizeDots: 200);
       b.feed(1);
     } catch (_) {
       // QR gagal dibuat/dirender - lanjutkan tanpa QR.

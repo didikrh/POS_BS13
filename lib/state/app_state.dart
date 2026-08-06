@@ -30,6 +30,18 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Dipanggil setelah data petugas diedit (lihat CashierManagementScreen).
+  /// Tanpa ini, kalau kasir yang SEDANG LOGIN mengedit namanya sendiri,
+  /// nama lama yang ter-cache di sini akan tetap dipakai di struk/Tanda
+  /// Terima sampai logout-login ulang - membingungkan karena perubahan
+  /// terasa "tidak tersimpan" padahal sudah tersimpan di database.
+  void refreshActiveCashierIfMatches(Cashier updated) {
+    if (_activeCashier?.id == updated.id) {
+      _activeCashier = updated;
+      notifyListeners();
+    }
+  }
+
   void logout() {
     _activeCashier = null;
     _cart.clear();

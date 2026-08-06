@@ -63,7 +63,7 @@ class _DepositReceiptFormScreenState extends State<DepositReceiptFormScreen> {
     final clientName = _clientNameCtrl.text.trim();
     if (clientName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nama Klien wajib diisi.')),
+        const SnackBar(content: Text('Nama Kastamer wajib diisi.')),
       );
       return;
     }
@@ -218,7 +218,7 @@ class _DepositReceiptFormScreenState extends State<DepositReceiptFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text('Identitas Klien', style: Theme.of(context).textTheme.titleMedium),
+            Text('Identitas Kastamer', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             // Autocomplete dari daftar Klien tersimpan (sama dengan yang
             // dipakai transaksi kasir) - pilih klien lama supaya kontak
@@ -236,7 +236,7 @@ class _DepositReceiptFormScreenState extends State<DepositReceiptFormScreen> {
                   focusNode: focusNode,
                   onChanged: (v) => _clientNameCtrl.text = v,
                   decoration: const InputDecoration(
-                      labelText: 'Nama Klien *', border: OutlineInputBorder()),
+                      labelText: 'Nama Kastamer *', border: OutlineInputBorder()),
                 );
               },
               onSelected: (client) {

@@ -267,6 +267,12 @@ class DatabaseHelper {
     return db.insert('cashiers', c.toMap()..remove('id'));
   }
 
+  Future<void> updateCashier(Cashier c) async {
+    final db = await database;
+    await db.update('cashiers', c.toMap()..remove('id'),
+        where: 'id = ?', whereArgs: [c.id]);
+  }
+
   // ---------------- STORE SETTINGS ----------------
 
   Future<StoreSettings> getSettings() async {

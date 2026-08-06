@@ -45,7 +45,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   fontWeight: FontWeight.bold, color: Colors.teal)),
           const SizedBox(height: 20),
 
-          Text('Data Pelanggan (opsional)',
+          Text('Data Kastamer (opsional)',
               style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
           // Autocomplete dari daftar Klien tersimpan - kalau nama yang
@@ -64,7 +64,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 focusNode: focusNode,
                 onChanged: (v) => _custNameCtrl.text = v,
                 decoration: const InputDecoration(
-                  labelText: 'Nama Pelanggan',
+                  labelText: 'Nama Kastamer',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -79,7 +79,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           TextField(
             controller: _custAddrCtrl,
             decoration: const InputDecoration(
-              labelText: 'Alamat Pelanggan',
+              labelText: 'Alamat Kastamer',
               border: OutlineInputBorder(),
               isDense: true,
             ),

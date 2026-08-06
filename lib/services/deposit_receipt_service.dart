@@ -50,7 +50,7 @@ class DepositReceiptService {
     b.divider();
 
     // ---------------- IDENTITAS KLIEN ----------------
-    b.line('Nama Klien :');
+    b.line('Nama Kastamer :');
     b.lineWrapped(receipt.clientName);
     if (receipt.clientContact.trim().isNotEmpty) {
       b.line('Kontak     : ${receipt.clientContact}');
@@ -64,7 +64,7 @@ class DepositReceiptService {
     for (final item in receipt.items) {
       b.lineWrapped(item.itemName);
       final beratStr = '${_weightStr(item.weight)} ${item.weightUnit}';
-      b.twoColumns(beratStr, '');
+      b.twoColumns('  $beratStr', '');
       if (item.notes.trim().isNotEmpty) {
         b.lineWrapped('  Ket: ${item.notes}');
       }
@@ -96,7 +96,7 @@ class DepositReceiptService {
           '|KLIEN:${receipt.clientName}'
           '|PETUGAS:${receipt.operatorName}'
           '|BARANG:$itemsSummary';
-      b.qrImage(qrPayload, scale: 3);
+      b.qrImage(qrPayload, targetSizeDots: 200);
       b.feed(1);
     } catch (_) {
       // QR gagal dibuat/dirender - lanjutkan tanpa QR.

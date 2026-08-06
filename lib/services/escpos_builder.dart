@@ -136,9 +136,21 @@ class EscPosBuilder {
   }
 
   /// Sisipkan gambar QR Code (dibuat dari teks [data]) sebagai raster image.
-  void qrImage(String data, {int scale = 4}) {
+  /// [targetSizeDots] kalau diisi akan MENIMPA [scale]: ukuran QR di kertas
+  /// dipaksa konsisten ke lebar/tinggi target (dalam dot) apa pun panjang
+  /// datanya, dengan menghitung scale mundur dari jumlah modul QR yang
+  /// dihasilkan. Tanpa ini, payload yang lebih panjang menghasilkan QR
+  /// lebih besar walau scale sama - itu penyebab QR struk kasir terlihat
+  /// lebih kecil dibanding Tanda Terima (datanya lebih pendek).
+  void qrImage(String data, {int scale = 4, int? targetSizeDots}) {
     final qr = QrRaster.encode(data);
-    final bitmap = qr.toBitmap(scale: scale);
+    var effectiveScale = scale;
+    if (targetSizeDots != null) {
+      const quietZoneModules = 2; // harus sama dengan default di QrRaster.toBitmap
+      final n = qr.moduleCount + quietZoneModules * 2;
+      effectiveScale = (targetSizeDots / n).round().clamp(1, 16);
+    }
+    final bitmap = qr.toBitmap(scale: effectiveScale);
     _buf.add(bitmapToEscPosRaster(bitmap));
     newline();
   }

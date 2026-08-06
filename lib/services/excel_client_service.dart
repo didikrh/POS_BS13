@@ -45,10 +45,10 @@ class ClientExcelImportResult {
 class ExcelClientService {
   static Future<bool> exportTemplate() async {
     final excel = Excel.createExcel();
-    final sheet = excel['Klien'];
-    excel.setDefaultSheet('Klien');
+    final sheet = excel['Kastamer'];
+    excel.setDefaultSheet('Kastamer');
     for (final name in List<String>.from(excel.tables.keys)) {
-      if (name != 'Klien') excel.delete(name);
+      if (name != 'Kastamer') excel.delete(name);
     }
 
     _writeHeader(sheet);
@@ -61,17 +61,17 @@ class ExcelClientService {
 
     final bytes = excel.save();
     if (bytes == null) return false;
-    return _saveBytes(Uint8List.fromList(bytes), 'Template_Klien.xlsx');
+    return _saveBytes(Uint8List.fromList(bytes), 'Template_Kastamer.xlsx');
   }
 
   static Future<bool> exportData() async {
     final clients = await DatabaseHelper.instance.getAllClients();
 
     final excel = Excel.createExcel();
-    final sheet = excel['Klien'];
-    excel.setDefaultSheet('Klien');
+    final sheet = excel['Kastamer'];
+    excel.setDefaultSheet('Kastamer');
     for (final name in List<String>.from(excel.tables.keys)) {
-      if (name != 'Klien') excel.delete(name);
+      if (name != 'Kastamer') excel.delete(name);
     }
 
     _writeHeader(sheet);
@@ -87,7 +87,7 @@ class ExcelClientService {
     final bytes = excel.save();
     if (bytes == null) return false;
     final fileName =
-        'Data_Klien_${DateTime.now().toIso8601String().substring(0, 10)}.xlsx';
+        'Data_Kastamer_${DateTime.now().toIso8601String().substring(0, 10)}.xlsx';
     return _saveBytes(Uint8List.fromList(bytes), fileName);
   }
 
