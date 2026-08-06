@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -45,6 +46,59 @@ class _PosScreenState extends State<PosScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${product.name} ditambahkan.'), duration: const Duration(seconds: 1)),
     );
+  }
+
+  /// Satuan "pcs"/"pc" (dan variasi kapitalisasi/spasi-nya) dianggap barang
+  /// hitungan utuh - tidak masuk akal beli 1.25 pcs. Satuan lain (kg, gram,
+  /// ton, liter, dst) dianggap bisa punya jumlah desimal (mis. 1.25 kg).
+  bool _isPcsUnit(String unit) {
+    final u = unit.trim().toLowerCase();
+    return u == 'pcs' || u == 'pc';
+  }
+
+  Future<void> _editQtyDialog(int index, CartLine line) async {
+    final ctrl = TextEditingController(text: line.qty.toStringAsFixed(2));
+    final result = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Jumlah ${line.product.name} (${line.product.unit})'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          // Maksimal 2 digit desimal di belakang koma/titik, sesuai
+          // permintaan - mencegah user tidak sengaja mengetik lebih.
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d*[.,]?\d{0,2}$')),
+          ],
+          decoration: InputDecoration(
+            labelText: 'Jumlah (${line.product.unit})',
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = double.tryParse(ctrl.text.replaceAll(',', '.'));
+              if (parsed == null || parsed <= 0) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('Masukkan angka lebih dari 0.')),
+                );
+                return;
+              }
+              Navigator.of(dialogContext).pop(parsed);
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    context.read<AppState>().updateQty(index, result);
   }
 
   @override
@@ -157,7 +211,19 @@ class _PosScreenState extends State<PosScreen> {
                                   .read<AppState>()
                                   .updateQty(i, line.qty - 1),
                             ),
-                            Text(line.qty.toStringAsFixed(0)),
+                            _isPcsUnit(line.product.unit)
+                                ? Text(line.qty.toStringAsFixed(0))
+                                : InkWell(
+                                    onTap: () => _editQtyDialog(i, line),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                      child: Text(
+                                        line.qty.toStringAsFixed(2),
+                                        style: const TextStyle(
+                                            decoration: TextDecoration.underline),
+                                      ),
+                                    ),
+                                  ),
                             IconButton(
                               icon: const Icon(Icons.add_circle_outline),
                               onPressed: () => context

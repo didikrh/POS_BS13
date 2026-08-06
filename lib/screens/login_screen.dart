@@ -51,7 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(Icons.point_of_sale, size: 56, color: Colors.teal),
+                    Image.asset('assets/images/logo.png', height: 96),
                     const SizedBox(height: 8),
                     Text('Login Kasir',
                         style: Theme.of(context).textTheme.headlineSmall,

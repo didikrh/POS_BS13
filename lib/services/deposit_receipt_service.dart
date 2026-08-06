@@ -17,6 +17,14 @@ class DepositReceiptService {
     final b = EscPosBuilder(paperWidthMm: settings.paperWidthMm);
     b.reset();
 
+    // ---------------- LOGO RESMI ----------------
+    b.align(EscPosAlign.center);
+    try {
+      b.printLogo();
+    } catch (_) {
+      // lewati logo, lanjutkan cetak struk seperti biasa.
+    }
+
     // ---------------- HEADER ----------------
     b.align(EscPosAlign.center);
     b.bold(true);
@@ -49,11 +57,10 @@ class DepositReceiptService {
     b.line('Petugas : ${receipt.operatorName}');
     b.divider();
 
-    // ---------------- IDENTITAS KLIEN ----------------
-    b.line('Nama Kastamer :');
-    b.lineWrapped(receipt.clientName);
+    // ---------------- IDENTITAS KASTAMER ----------------
+    b.line('Kastamer : ${receipt.clientName}');
     if (receipt.clientContact.trim().isNotEmpty) {
-      b.line('Kontak     : ${receipt.clientContact}');
+      b.line('Kontak   : ${receipt.clientContact}');
     }
     b.divider();
 

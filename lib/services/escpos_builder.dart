@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'qr_raster.dart';
+import 'logo_raster.dart';
 
 enum EscPosAlign { left, center, right }
 
@@ -142,6 +143,15 @@ class EscPosBuilder {
   /// dihasilkan. Tanpa ini, payload yang lebih panjang menghasilkan QR
   /// lebih besar walau scale sama - itu penyebab QR struk kasir terlihat
   /// lebih kecil dibanding Tanda Terima (datanya lebih pendek).
+  /// Cetak logo resmi "Bank Sampah eRWe TeluLas" di kertas. Data raster-nya
+  /// sudah di-precompute sekali (lihat logo_raster.dart) - di sini cuma
+  /// menyalin byte-nya langsung ke buffer, tidak ada pemrosesan gambar
+  /// runtime sama sekali.
+  void printLogo() {
+    _buf.add(logoRasterBytes);
+    newline();
+  }
+
   void qrImage(String data, {int scale = 4, int? targetSizeDots}) {
     final qr = QrRaster.encode(data);
     var effectiveScale = scale;

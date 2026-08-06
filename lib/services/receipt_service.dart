@@ -19,6 +19,17 @@ class ReceiptService {
     final b = EscPosBuilder(paperWidthMm: settings.paperWidthMm);
     b.reset();
 
+    // ---------------- LOGO RESMI ----------------
+    // Dibungkus try/catch TERSENDIRI - sama seperti QR - supaya kalau ada
+    // printer yang tidak mendukung perintah raster gambar, sisa struk
+    // TETAP tercetak tanpa logo, bukan batal total.
+    b.align(EscPosAlign.center);
+    try {
+      b.printLogo();
+    } catch (_) {
+      // lewati logo, lanjutkan cetak struk seperti biasa.
+    }
+
     // ---------------- HEADER (kustom) ----------------
     b.align(EscPosAlign.center);
     b.bold(true);
@@ -47,11 +58,9 @@ class ReceiptService {
     b.line('Tanggal   : ${_dateFmt.format(trx.trxDate)}');
     b.line('Kasir     : ${trx.cashierName}');
     if (trx.customerName.trim().isNotEmpty) {
-      b.line('Kastamer :');
-      b.lineWrapped(trx.customerName);
+      b.line('Kastamer : ${trx.customerName}');
       if (trx.customerAddress.trim().isNotEmpty) {
-        b.line('Alamat    :');
-        b.lineWrapped(trx.customerAddress);
+        b.line('Alamat   : ${trx.customerAddress}');
       }
     }
     b.divider();
