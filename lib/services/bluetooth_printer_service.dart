@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
@@ -17,6 +18,37 @@ class BluetoothPrinterService {
       BluetoothPrinterService._internal();
 
   final BlueThermalPrinter _bt = BlueThermalPrinter.instance;
+  Timer? _keepAliveTimer;
+
+  /// KENAPA INI PERLU: banyak printer thermal Bluetooth murah otomatis
+  /// memutus koneksi kalau tidak ada aktivitas selama beberapa puluh
+  /// detik (mode hemat daya di firmware printer, di luar kendali kode
+  /// aplikasi ini). Sebelumnya, aplikasi cuma cek/kirim data ke printer
+  /// PAS mau cetak - kalau user pindah-pindah menu tanpa cetak, printer
+  /// keburu idle-timeout sendiri, sampai akhirnya harus buka Pengaturan
+  /// lagi untuk sambung ulang.
+  ///
+  /// Timer ini hidup di level SINGLETON service (bukan terikat ke State
+  /// satu layar tertentu), jadi tetap jalan terus selama APLIKASI belum
+  /// ditutup, walau user pindah-pindah tab. Setiap 20 detik, kirim
+  /// panggilan status ringan ke printer supaya dianggap "masih aktif".
+  void _startKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
+      try {
+        await _bt.isConnected.timeout(const Duration(seconds: 4), onTimeout: () => null);
+      } catch (_) {
+        // Kalau gagal, biarkan saja - percobaan berikutnya 20 detik lagi.
+        // Status sebenarnya akan tetap dicek ulang (dengan retry) di
+        // isConnected()/printBytes() saat user benar-benar mau cetak.
+      }
+    });
+  }
+
+  void _stopKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
+  }
 
   Future<bool> requestPermissions() async {
     final statuses = await [
@@ -68,6 +100,7 @@ class BluetoothPrinterService {
   Future<bool> connect(BluetoothDevice device) async {
     try {
       await _bt.connect(device);
+      _startKeepAlive();
       return true;
     } catch (_) {
       return false;
@@ -75,6 +108,7 @@ class BluetoothPrinterService {
   }
 
   Future<void> disconnect() async {
+    _stopKeepAlive();
     try {
       await _bt.disconnect();
     } catch (_) {

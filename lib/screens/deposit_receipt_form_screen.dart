@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -10,16 +12,26 @@ import '../state/app_state.dart';
 
 const List<String> kWeightUnits = ['kg', 'gram', 'ton'];
 
+/// Status pengecekan apakah nama barang yang diketik sudah ada di Master
+/// Produk atau belum - dipakai untuk menampilkan/menyembunyikan field
+/// Kode Barang secara otomatis.
+enum _ProductMatchStatus { checking, existing, newProduct, empty }
+
 class _DraftItem {
   final nameCtrl = TextEditingController();
   final weightCtrl = TextEditingController();
   final notesCtrl = TextEditingController();
+  final codeCtrl = TextEditingController();
   String unit = 'kg';
+  _ProductMatchStatus matchStatus = _ProductMatchStatus.empty;
+  Timer? _debounce;
 
   void dispose() {
+    _debounce?.cancel();
     nameCtrl.dispose();
     weightCtrl.dispose();
     notesCtrl.dispose();
+    codeCtrl.dispose();
   }
 }
 
@@ -59,6 +71,33 @@ class _DepositReceiptFormScreenState extends State<DepositReceiptFormScreen> {
     });
   }
 
+  /// Dipanggil tiap kali nama barang di suatu baris berubah. Dicek (dengan
+  /// jeda singkat supaya tidak query ke DB di setiap ketikan huruf) apakah
+  /// nama itu sudah ada di Master Produk - kalau BELUM ADA, field Kode
+  /// Barang otomatis muncul supaya barang baru ini bisa terhubung dengan
+  /// benar ke tabel produk saat stoknya otomatis ditambahkan nanti.
+  void _onItemNameChanged(_DraftItem draft) {
+    draft._debounce?.cancel();
+    final name = draft.nameCtrl.text.trim();
+    if (name.isEmpty) {
+      setState(() => draft.matchStatus = _ProductMatchStatus.empty);
+      return;
+    }
+    setState(() => draft.matchStatus = _ProductMatchStatus.checking);
+    draft._debounce = Timer(const Duration(milliseconds: 500), () async {
+      final product = await DatabaseHelper.instance.getProductByName(name);
+      if (!mounted) return;
+      // Nama boleh saja sudah berubah lagi selagi menunggu - cek ulang
+      // supaya tidak menampilkan status untuk nama yang sudah usang.
+      if (draft.nameCtrl.text.trim() != name) return;
+      setState(() {
+        draft.matchStatus = product != null
+            ? _ProductMatchStatus.existing
+            : _ProductMatchStatus.newProduct;
+      });
+    });
+  }
+
   Future<void> _submit() async {
     final clientName = _clientNameCtrl.text.trim();
     if (clientName.isEmpty) {
@@ -93,6 +132,9 @@ class _DepositReceiptFormScreenState extends State<DepositReceiptFormScreen> {
         weight: weight,
         weightUnit: draft.unit,
         notes: draft.notesCtrl.text.trim(),
+        productCode: draft.matchStatus == _ProductMatchStatus.newProduct
+            ? draft.codeCtrl.text.trim()
+            : null,
       ));
     }
 
@@ -289,9 +331,41 @@ class _DepositReceiptFormScreenState extends State<DepositReceiptFormScreen> {
                       ),
                       TextField(
                         controller: draft.nameCtrl,
-                        decoration: const InputDecoration(
-                            labelText: 'Nama Barang', border: OutlineInputBorder()),
+                        onChanged: (_) => _onItemNameChanged(draft),
+                        decoration: InputDecoration(
+                          labelText: 'Nama Barang',
+                          border: const OutlineInputBorder(),
+                          helperText: switch (draft.matchStatus) {
+                            _ProductMatchStatus.checking => 'Memeriksa Master Produk...',
+                            _ProductMatchStatus.existing =>
+                              '✓ Sudah ada di Master Produk - stok akan otomatis ditambah.',
+                            _ProductMatchStatus.newProduct =>
+                              'Barang baru - belum ada di Master Produk.',
+                            _ProductMatchStatus.empty => null,
+                          },
+                          helperStyle: TextStyle(
+                            color: draft.matchStatus == _ProductMatchStatus.newProduct
+                                ? Colors.orange[800]
+                                : Colors.green[700],
+                          ),
+                        ),
                       ),
+                      // Field Kode Barang HANYA muncul kalau nama barang yang
+                      // diketik belum ada di Master Produk - supaya barang
+                      // baru ini bisa terhubung dengan kode yang benar saat
+                      // otomatis ditambahkan sebagai produk baru nanti.
+                      // Boleh dikosongkan (kode akan dibuat otomatis).
+                      if (draft.matchStatus == _ProductMatchStatus.newProduct) ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: draft.codeCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Kode Barang (opsional, produk baru)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.qr_code, size: 20),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       Row(
                         children: [

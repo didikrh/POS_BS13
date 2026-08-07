@@ -6,6 +6,11 @@ class DepositReceiptItem {
   final double weight;
   final String weightUnit; // 'kg' (default), 'gram', atau 'ton'
   final String notes;
+  /// Kode barang - HANYA relevan kalau barang ini BELUM ADA di Master
+  /// Produk (baru pertama kali disetor). Kalau barang sudah ada (dicocokkan
+  /// via nama), field ini diabaikan - stok produk yang sudah ada itu yang
+  /// ditambah, memakai kode yang sudah ada.
+  final String? productCode;
 
   DepositReceiptItem({
     this.id,
@@ -14,6 +19,7 @@ class DepositReceiptItem {
     required this.weight,
     this.weightUnit = 'kg',
     this.notes = '',
+    this.productCode,
   });
 
   Map<String, dynamic> toMap() => {

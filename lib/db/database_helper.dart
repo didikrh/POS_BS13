@@ -403,15 +403,15 @@ class DatabaseHelper {
         where: 'name = ? COLLATE NOCASE', whereArgs: [item.itemName]);
 
     if (rows.isEmpty) {
-      // Kode dibuat otomatis dari nama+waktu+indeks barang supaya pasti
-      // unik tanpa perlu staf mengisi apa pun dulu. Indeks WAJIB
-      // disertakan - kalau cuma pakai timestamp milidetik, 2+ barang baru
-      // yang diproses dalam satu Tanda Terima yang sama bisa kebetulan
-      // dapat kode identik (loop insert-nya cepat, bisa dalam milidetik
-      // yang sama), melanggar UNIQUE constraint dan menggagalkan seluruh
-      // transaksi penyimpanan.
-      final autoCode =
-          'TTP-${DateTime.now().millisecondsSinceEpoch}-$itemIndex';
+      // Kalau user mengisi Kode Barang secara manual (field itu cuma
+      // muncul di form saat nama barangnya BELUM ADA di Master Produk),
+      // pakai kode itu supaya produk baru ini benar-benar terhubung ke
+      // kode yang diinginkan staf. Kalau dikosongkan, tetap dibuatkan
+      // otomatis dari nama+waktu+indeks supaya tidak wajib diisi.
+      final manualCode = item.productCode?.trim();
+      final autoCode = (manualCode != null && manualCode.isNotEmpty)
+          ? manualCode
+          : 'TTP-${DateTime.now().millisecondsSinceEpoch}-$itemIndex';
       await txn.insert(
         'products',
         Product(
