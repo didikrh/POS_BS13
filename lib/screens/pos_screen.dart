@@ -13,10 +13,10 @@ class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
 
   @override
-  State<PosScreen> createState() => _PosScreenState();
+  State<PosScreen> createState() => PosScreenState();
 }
 
-class _PosScreenState extends State<PosScreen> {
+class PosScreenState extends State<PosScreen> {
   final _searchCtrl = TextEditingController();
   List<Product> _results = [];
   static final _currency =
@@ -24,8 +24,17 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _search(String q) async {
     final list = await DatabaseHelper.instance.getAllProducts(search: q);
+    if (!mounted) return;
     setState(() => _results = list);
   }
+
+  /// Dipanggil dari HomeScreen setiap kali tab Kasir dipilih - sama seperti
+  /// pola di TransactionHistoryScreen/DepositReceiptListScreen. Tanpa ini,
+  /// produk baru (mis. hasil auto-tambah dari setoran Tanda Terima di tab
+  /// lain) TIDAK akan muncul di daftar Kasir sampai aplikasi ditutup-buka
+  /// ulang, karena IndexedStack menjaga tab ini tetap hidup dan initState()
+  /// cuma jalan sekali di awal.
+  void refreshProducts() => _search(_searchCtrl.text);
 
   Future<void> _scanAndAdd() async {
     final code = await Navigator.of(context).push<String>(

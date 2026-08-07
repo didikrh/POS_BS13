@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../db/database_helper.dart';
@@ -375,6 +376,10 @@ class _DepositReceiptFormScreenState extends State<DepositReceiptFormScreen> {
                               controller: draft.weightCtrl,
                               keyboardType:
                                   const TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                    RegExp(r'^\d*[.,]?\d{0,2}$')),
+                              ],
                               decoration: const InputDecoration(
                                   labelText: 'Berat', border: OutlineInputBorder()),
                             ),

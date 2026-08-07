@@ -69,9 +69,12 @@ class DepositReceiptService {
     b.line('Barang Disetor/Diserahkan:');
     b.bold(false);
     for (final item in receipt.items) {
-      b.lineWrapped(item.itemName);
       final beratStr = '${_weightStr(item.weight)} ${item.weightUnit}';
-      b.twoColumns('  $beratStr', '');
+      // Nama barang & beratnya digabung jadi SATU baris (nama kiri, berat
+      // kanan) supaya lebih mudah dibaca - kalau nama terlalu panjang,
+      // twoColumns() otomatis melipat ke baris kedua (berat tetap rata
+      // kanan), tidak pernah saling menimpa.
+      b.twoColumns(item.itemName, beratStr);
       if (item.notes.trim().isNotEmpty) {
         b.lineWrapped('  Ket: ${item.notes}');
       }

@@ -12,10 +12,10 @@ class ProductListScreen extends StatefulWidget {
   const ProductListScreen({super.key});
 
   @override
-  State<ProductListScreen> createState() => _ProductListScreenState();
+  State<ProductListScreen> createState() => ProductListScreenState();
 }
 
-class _ProductListScreenState extends State<ProductListScreen> {
+class ProductListScreenState extends State<ProductListScreen> {
   List<Product> _products = [];
   final _searchCtrl = TextEditingController();
   static final _currency =
@@ -29,8 +29,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
 
   Future<void> _load({String? search}) async {
     final list = await DatabaseHelper.instance.getAllProducts(search: search);
+    if (!mounted) return;
     setState(() => _products = list);
   }
+
+  /// Dipanggil dari HomeScreen setiap kali tab Produk dipilih - lihat
+  /// penjelasan yang sama di PosScreenState.refreshProducts().
+  void refreshProducts() => _load(search: _searchCtrl.text);
 
   Future<void> _openForm({Product? product}) async {
     final result = await Navigator.of(context).push<bool>(

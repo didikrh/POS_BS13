@@ -15,12 +15,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
+  final _posKey = GlobalKey<PosScreenState>();
+  final _productKey = GlobalKey<ProductListScreenState>();
   final _historyKey = GlobalKey<TransactionHistoryScreenState>();
   final _depositKey = GlobalKey<DepositReceiptListScreenState>();
 
   late final _pages = [
-    const PosScreen(),
-    const ProductListScreen(),
+    PosScreen(key: _posKey),
+    ProductListScreen(key: _productKey),
     TransactionHistoryScreen(key: _historyKey),
     DepositReceiptListScreen(key: _depositKey),
     const SettingsScreen(),
@@ -34,13 +36,24 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIndex: _index,
         onDestinationSelected: (i) {
           setState(() => _index = i);
-          // Tab Riwayat & Tanda Terima dipakai IndexedStack yang menjaga
-          // state tetap hidup - initState-nya hanya jalan sekali di awal,
-          // jadi data baru tidak otomatis muncul tanpa refresh manual ini.
-          if (i == 2) {
-            _historyKey.currentState?.refreshToIncludeToday();
-          } else if (i == 3) {
-            _depositKey.currentState?.refreshToIncludeToday();
+          // SEMUA tab di sini dipakai IndexedStack yang menjaga state tetap
+          // hidup - initState()-nya hanya jalan sekali di awal login, jadi
+          // data baru (mis. produk yang otomatis bertambah dari setoran
+          // Tanda Terima di tab lain) TIDAK akan muncul tanpa refresh
+          // manual ini setiap kali tab terkait dibuka.
+          switch (i) {
+            case 0:
+              _posKey.currentState?.refreshProducts();
+              break;
+            case 1:
+              _productKey.currentState?.refreshProducts();
+              break;
+            case 2:
+              _historyKey.currentState?.refreshToIncludeToday();
+              break;
+            case 3:
+              _depositKey.currentState?.refreshToIncludeToday();
+              break;
           }
         },
         destinations: const [

@@ -310,10 +310,23 @@ class DatabaseHelper {
         );
 
         if (item.productId != null) {
-          await txn.rawUpdate(
-            'UPDATE products SET stock = stock - ? WHERE id = ?',
-            [item.qty, item.productId],
-          );
+          // Diambil dulu nilainya, dihitung & DIBULATKAN ke 2 digit desimal
+          // di Dart, baru ditulis balik - bukan pakai "SET stock = stock -
+          // ?" langsung di SQL. Kalau qty desimal dipakai berulang kali
+          // (mis. transaksi kg berturut-turut), pengurangan float murni
+          // bisa menumpuk sisa presisi aneh (mis. 2.9999999999999996)
+          // walau nilainya seharusnya bulat 2 digit saja.
+          final rows = await txn
+              .query('products', where: 'id = ?', whereArgs: [item.productId]);
+          if (rows.isNotEmpty) {
+            final currentStock = (rows.first['stock'] as num).toDouble();
+            await txn.update(
+              'products',
+              {'stock': _round2(currentStock - item.qty)},
+              where: 'id = ?',
+              whereArgs: [item.productId],
+            );
+          }
         }
       }
       return trxId;
@@ -418,7 +431,7 @@ class DatabaseHelper {
           code: autoCode,
           name: item.itemName,
           price: 0,
-          stock: item.weight,
+          stock: _round2(item.weight),
           unit: item.weightUnit,
         ).toMap()
           ..remove('id'),
@@ -431,11 +444,18 @@ class DatabaseHelper {
         _convertWeight(item.weight, item.weightUnit, existing.unit);
     await txn.update(
       'products',
-      {'stock': existing.stock + convertedWeight},
+      {'stock': _round2(existing.stock + convertedWeight)},
       where: 'id = ?',
       whereArgs: [existing.id],
     );
   }
+
+  /// Bulatkan ke maksimal 2 digit desimal. Dipakai SETIAP KALI stok produk
+  /// ditulis (baik dikurangi saat jual-beli maupun ditambah saat setoran
+  /// kastamer), supaya nilai stok yang terakumulasi dari banyak transaksi
+  /// desimal tidak menumpuk presisi berlebih akibat pembulatan floating-
+  /// point (mis. 1.2000000000000002).
+  double _round2(double value) => (value * 100).round() / 100;
 
   /// Konversi berat antar satuan kg/gram/ton. Kalau satuan tujuan bukan
   /// salah satu dari ketiganya (mis. produk lama satuannya "pcs"), berat
