@@ -462,6 +462,280 @@ def strip_legacy_package_attr_from_pub_cache():
               "pihak ketiga sudah dipatch.")
 
 
+CUSTOM_SPP_KOTLIN_TEMPLATE = '''package {package}
+
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothSocket
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
+import java.io.IOException
+import java.util.UUID
+import java.util.concurrent.Executors
+
+/**
+ * Plugin native CUSTOM untuk koneksi printer thermal Bluetooth Classic
+ * (SPP/RFCOMM), dibuat KHUSUS karena plugin pub.dev standar (blue_thermal_printer,
+ * print_bluetooth_thermal) terbukti GAGAL connect ke sebagian printer
+ * generik murah di Android 12+ (khususnya perangkat dengan catatan SDP
+ * yang tidak lengkap/tidak standar - printer tetap "Paired" tapi socket
+ * RFCOMM standar selalu ditolak).
+ *
+ * Strategi 3 lapis saat connect - persis pola yang dipakai aplikasi
+ * "Serial Bluetooth Terminal" yang terbukti berhasil ke printer semacam
+ * ini padahal plugin pub.dev manapun gagal:
+ *   1) Socket SECURE standar (createRfcommSocketToServiceRecord)
+ *   2) Socket INSECURE (createInsecureRfcommSocketToServiceRecord)
+ *   3) Fallback reflection langsung ke channel RFCOMM 1 (tanpa lewat
+ *      lookup UUID SDP sama sekali) - jurus terakhir untuk perangkat yang
+ *      benar-benar tidak mengiklankan UUID SPP dengan benar.
+ */
+object CustomSppPlugin : MethodChannel.MethodCallHandler {{
+    private const val CHANNEL = "custom_spp_bluetooth"
+    private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+
+    private var socket: BluetoothSocket? = null
+    private val executor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    fun registerWith(flutterEngine: FlutterEngine, context: Context) {{
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+            .setMethodCallHandler(this)
+    }}
+
+    private fun adapter(): BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
+
+    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {{
+        when (call.method) {{
+            "getPairedDevices" -> getPairedDevices(result)
+            "connect" -> {{
+                val mac = call.argument<String>("mac")
+                if (mac == null) {{
+                    result.error("NO_MAC", "mac address kosong", null)
+                }} else {{
+                    connect(mac, result)
+                }}
+            }}
+            "disconnect" -> disconnect(result)
+            "isConnected" -> result.success(socket?.isConnected == true)
+            "writeBytes" -> {{
+                val bytes = call.argument<ByteArray>("bytes")
+                if (bytes == null) {{
+                    result.error("NO_BYTES", "bytes kosong", null)
+                }} else {{
+                    writeBytes(bytes, result)
+                }}
+            }}
+            else -> result.notImplemented()
+        }}
+    }}
+
+    private fun getPairedDevices(result: MethodChannel.Result) {{
+        try {{
+            val devices = adapter()?.bondedDevices ?: emptySet()
+            val list = devices.map {{ d ->
+                mapOf("name" to (d.name ?: d.address), "mac" to d.address)
+            }}
+            result.success(list)
+        }} catch (e: SecurityException) {{
+            result.error("PERMISSION", "Izin Bluetooth belum diberikan", e.message)
+        }} catch (e: Exception) {{
+            result.error("ERROR", e.message, null)
+        }}
+    }}
+
+    private fun connect(mac: String, result: MethodChannel.Result) {{
+        executor.execute {{
+            try {{
+                closeSocketQuietly()
+                val bt = adapter()
+                if (bt == null) {{
+                    postError(result, "NO_ADAPTER", "Perangkat tidak punya Bluetooth adapter")
+                    return@execute
+                }}
+                val device: BluetoothDevice = bt.getRemoteDevice(mac)
+                try {{
+                    bt.cancelDiscovery()
+                }} catch (_: Exception) {{
+                }}
+
+                var connected: BluetoothSocket? = null
+                var lastError: Exception? = null
+
+                try {{
+                    val s = device.createRfcommSocketToServiceRecord(SPP_UUID)
+                    s.connect()
+                    connected = s
+                }} catch (e: Exception) {{
+                    lastError = e
+                }}
+
+                if (connected == null) {{
+                    try {{
+                        val s = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
+                        s.connect()
+                        connected = s
+                    }} catch (e: Exception) {{
+                        lastError = e
+                    }}
+                }}
+
+                if (connected == null) {{
+                    try {{
+                        val m = device.javaClass.getMethod(
+                            "createRfcommSocket", Int::class.javaPrimitiveType
+                        )
+                        val s = m.invoke(device, 1) as BluetoothSocket
+                        s.connect()
+                        connected = s
+                    }} catch (e: Exception) {{
+                        lastError = e
+                    }}
+                }}
+
+                if (connected != null) {{
+                    socket = connected
+                    postSuccess(result, true)
+                }} else {{
+                    postError(
+                        result, "CONNECT_FAILED",
+                        "Semua metode koneksi gagal: " + (lastError?.message ?: "unknown")
+                    )
+                }}
+            }} catch (e: SecurityException) {{
+                postError(result, "PERMISSION", "Izin Bluetooth belum diberikan: " + e.message)
+            }} catch (e: Exception) {{
+                postError(result, "ERROR", e.message ?: "unknown error")
+            }}
+        }}
+    }}
+
+    private fun writeBytes(bytes: ByteArray, result: MethodChannel.Result) {{
+        executor.execute {{
+            try {{
+                val s = socket
+                if (s == null || !s.isConnected) {{
+                    postError(result, "NOT_CONNECTED", "Printer belum terhubung")
+                    return@execute
+                }}
+                s.outputStream.write(bytes)
+                s.outputStream.flush()
+                postSuccess(result, true)
+            }} catch (e: IOException) {{
+                postError(result, "WRITE_FAILED", e.message ?: "gagal menulis")
+            }}
+        }}
+    }}
+
+    private fun disconnect(result: MethodChannel.Result) {{
+        executor.execute {{
+            closeSocketQuietly()
+            postSuccess(result, null)
+        }}
+    }}
+
+    private fun closeSocketQuietly() {{
+        try {{
+            socket?.close()
+        }} catch (_: Exception) {{
+        }}
+        socket = null
+    }}
+
+    private fun postSuccess(result: MethodChannel.Result, value: Any?) {{
+        mainHandler.post {{ result.success(value) }}
+    }}
+
+    private fun postError(result: MethodChannel.Result, code: String, message: String?) {{
+        mainHandler.post {{ result.error(code, message, null) }}
+    }}
+}}
+'''
+
+MAIN_ACTIVITY_MARKER = "CustomSppPlugin.registerWith"
+
+
+def find_main_activity():
+    kotlin_root = ROOT / "android" / "app" / "src" / "main" / "kotlin"
+    candidates = list(kotlin_root.rglob("MainActivity.kt")) if kotlin_root.exists() else []
+    if not candidates:
+        java_root = ROOT / "android" / "app" / "src" / "main" / "java"
+        candidates = list(java_root.rglob("MainActivity.kt")) if java_root.exists() else []
+    return candidates[0] if candidates else None
+
+
+def write_custom_bluetooth_plugin():
+    """
+    Menyisipkan CustomSppPlugin.kt (koneksi Bluetooth SPP 3-lapis: secure ->
+    insecure -> reflection channel 1) ke folder android/ yang di-generate
+    ulang tiap build, lalu mendaftarkannya lewat MainActivity.kt. Perlu
+    dijalankan ULANG SETIAP BUILD karena android/ tidak disimpan di git -
+    berbeda dengan pendekatan commit folder android/ permanen, script inilah
+    yang menjamin kode native custom ini selalu ada di setiap build CI.
+    """
+    main_activity_path = find_main_activity()
+    if main_activity_path is None:
+        print("[WARN] MainActivity.kt tidak ditemukan - lewati plugin Bluetooth custom.")
+        return
+
+    package_dir = main_activity_path.parent
+    kotlin_root = ROOT / "android" / "app" / "src" / "main" / "kotlin"
+    try:
+        rel = package_dir.relative_to(kotlin_root)
+        package_name = ".".join(rel.parts)
+    except ValueError:
+        print("[WARN] Tidak bisa menentukan nama package dari lokasi MainActivity.kt.")
+        return
+
+    plugin_path = package_dir / "CustomSppPlugin.kt"
+    plugin_path.write_text(
+        CUSTOM_SPP_KOTLIN_TEMPLATE.format(package=package_name), encoding="utf-8"
+    )
+    print(f"[OK] CustomSppPlugin.kt ditulis ke {plugin_path}")
+
+    content = main_activity_path.read_text(encoding="utf-8")
+    if MAIN_ACTIVITY_MARKER in content:
+        print("[SKIP] MainActivity.kt sudah dipatch untuk CustomSppPlugin.")
+        return
+
+    if "import io.flutter.embedding.engine.FlutterEngine" not in content:
+        content = content.replace(
+            "import io.flutter.embedding.android.FlutterActivity",
+            "import io.flutter.embedding.android.FlutterActivity\n"
+            "import io.flutter.embedding.engine.FlutterEngine",
+            1,
+        )
+
+    new_class_body = (
+        "class MainActivity: FlutterActivity() {\n"
+        "    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {\n"
+        "        super.configureFlutterEngine(flutterEngine)\n"
+        "        CustomSppPlugin.registerWith(flutterEngine, this)\n"
+        "    }\n"
+        "}\n"
+    )
+    pattern = re.compile(
+        r"class\s+MainActivity\s*:\s*FlutterActivity\(\)\s*(\{\s*\})?\s*$",
+        re.MULTILINE,
+    )
+    if pattern.search(content):
+        content = pattern.sub(new_class_body.rstrip("\n"), content, count=1)
+        if not content.endswith("\n"):
+            content += "\n"
+        main_activity_path.write_text(content, encoding="utf-8")
+        print(f"[OK] MainActivity.kt dipatch untuk registrasi CustomSppPlugin.")
+    else:
+        print(
+            "[WARN] Pola 'class MainActivity: FlutterActivity()' tidak ditemukan "
+            "persis seperti yang diharapkan - MainActivity.kt TIDAK dipatch. "
+            "Cek manual bentuk template Flutter yang dipakai saat ini."
+        )
+
+
 if __name__ == "__main__":
     patch_manifest()
     patch_gradle_min_sdk(23)
@@ -469,4 +743,5 @@ if __name__ == "__main__":
     patch_root_namespace_fix()
     patch_subprojects_compile_sdk()
     strip_legacy_package_attr_from_pub_cache()
+    write_custom_bluetooth_plugin()
     print("Selesai patch android/.")

@@ -1,47 +1,52 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
-/// Wrapper tipis di atas package `print_bluetooth_thermal` (Bluetooth
-/// Classic/SPP - profil yang dipakai mayoritas printer thermal 58mm/80mm
-/// murah).
+/// Info printer yang sudah ter-pairing di HP (nama + alamat MAC).
+class BtDevice {
+  final String name;
+  final String mac;
+  BtDevice({required this.name, required this.mac});
+}
+
+/// Wrapper di atas CHANNEL NATIVE CUSTOM ("custom_spp_bluetooth" - lihat
+/// CustomSppPlugin.kt yang disisipkan otomatis oleh tool/patch_android.py).
 ///
-/// RIWAYAT: sebelumnya pakai `blue_thermal_printer`, tapi terbukti GAGAL
-/// connect di Android 14 (status printer mentok di "Paired", tidak pernah
-/// "Connected") - plugin itu sudah lama tidak dirawat pembuatnya dan ada
-/// banyak laporan serupa untuk Android 12+. `print_bluetooth_thermal`
-/// aktif dirawat, koneksinya dijaga via Kotlin Coroutine di sisi native
-/// (lebih tahan lama), dan tidak mewajibkan izin lokasi untuk connect.
+/// RIWAYAT: sebelumnya coba dua plugin pub.dev berturut-turut
+/// (blue_thermal_printer, lalu print_bluetooth_thermal) - KEDUANYA gagal
+/// connect ke sebagian printer generik murah di Android 12-14 (status
+/// mentok "Paired", RFCOMM socket standar selalu ditolak printer).
+/// Terbukti aplikasi "Serial Bluetooth Terminal" berhasil connect ke
+/// printer yang SAMA di HP yang SAMA - artinya OS/hardware tidak
+/// bermasalah, masalahnya di CARA plugin membuka socket RFCOMM-nya.
 ///
-/// CATATAN PENTING (Android 12+ / API 31+):
-/// Tetap butuh izin runtime BLUETOOTH_CONNECT & BLUETOOTH_SCAN (bukan lagi
-/// cukup izin lokasi seperti versi Android lama). Sudah ditangani lewat
-/// requestPermissions() di bawah, dan wajib dideklarasikan juga di
-/// android/app/src/main/AndroidManifest.xml (lihat README) - itu bagian
-/// yang TIDAK berubah dari sebelumnya.
+/// Solusinya: kode koneksi native sendiri (CustomSppPlugin.kt) dengan 3
+/// lapis percobaan - socket secure standar, lalu insecure, lalu fallback
+/// reflection ke channel RFCOMM 1 langsung - persis pola yang dipakai
+/// aplikasi "serial terminal" yang terbukti berhasil.
 class BluetoothPrinterService {
   BluetoothPrinterService._internal();
   static final BluetoothPrinterService instance =
       BluetoothPrinterService._internal();
 
+  static const MethodChannel _channel = MethodChannel('custom_spp_bluetooth');
+
   Timer? _keepAliveTimer;
+  String? _connectedMac;
 
   /// KENAPA INI PERLU: banyak printer thermal Bluetooth murah otomatis
-  /// memutus koneksi kalau tidak ada aktivitas selama beberapa puluh
-  /// detik (mode hemat daya di firmware printer, di luar kendali kode
-  /// aplikasi ini). Timer ini hidup di level SINGLETON service (bukan
-  /// terikat ke State satu layar tertentu), jadi tetap jalan terus selama
-  /// APLIKASI belum ditutup, walau user pindah-pindah tab. Setiap 20
-  /// detik, kirim panggilan status ringan ke printer supaya dianggap
-  /// "masih aktif". (print_bluetooth_thermal sendiri sudah menjaga koneksi
-  /// via Kotlin Coroutine di sisi native, ini lapisan jaga-jaga tambahan.)
+  /// memutus koneksi kalau tidak ada aktivitas selama beberapa puluh detik
+  /// (mode hemat daya di firmware printer). Timer ini hidup di level
+  /// SINGLETON service (bukan terikat ke satu layar), jadi tetap jalan
+  /// terus selama aplikasi belum ditutup, walau user pindah-pindah tab.
   void _startKeepAlive() {
     _keepAliveTimer?.cancel();
     _keepAliveTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
       try {
-        await PrintBluetoothThermal.connectionStatus
+        await _channel
+            .invokeMethod<bool>('isConnected')
             .timeout(const Duration(seconds: 4), onTimeout: () => false);
       } catch (_) {
         // Kalau gagal, biarkan saja - percobaan berikutnya 20 detik lagi.
@@ -65,10 +70,19 @@ class BluetoothPrinterService {
     );
   }
 
-  Future<List<BluetoothInfo>> getPairedDevices() async {
+  Future<List<BtDevice>> getPairedDevices() async {
     await requestPermissions();
     try {
-      return await PrintBluetoothThermal.pairedBluetooths;
+      final result = await _channel.invokeMethod<List<dynamic>>('getPairedDevices');
+      if (result == null) return [];
+      return result
+          .map((e) => Map<Object?, Object?>.from(e as Map))
+          .map((m) => BtDevice(
+                name: (m['name'] as String?) ?? '(tanpa nama)',
+                mac: (m['mac'] as String?) ?? '',
+              ))
+          .where((d) => d.mac.isNotEmpty)
+          .toList();
     } catch (_) {
       return [];
     }
@@ -80,9 +94,10 @@ class BluetoothPrinterService {
   Future<bool> isConnected({int attempts = 3}) async {
     for (var i = 0; i < attempts; i++) {
       try {
-        final connected = await PrintBluetoothThermal.connectionStatus
+        final connected = await _channel
+            .invokeMethod<bool>('isConnected')
             .timeout(const Duration(seconds: 4), onTimeout: () => false);
-        if (connected) return true;
+        if (connected == true) return true;
       } catch (_) {
         // coba lagi
       }
@@ -93,13 +108,19 @@ class BluetoothPrinterService {
     return false;
   }
 
-  Future<bool> connect(BluetoothInfo device) async {
+  Future<bool> connect(BtDevice device) async {
     try {
       await requestPermissions();
-      final ok = await PrintBluetoothThermal.connect(
-          macPrinterAddress: device.macAdress);
-      if (ok) _startKeepAlive();
-      return ok;
+      // Percobaan koneksi (3 lapis di sisi native) bisa makan waktu lebih
+      // lama dari panggilan biasa - beri jeda cukup panjang.
+      final ok = await _channel
+          .invokeMethod<bool>('connect', {'mac': device.mac})
+          .timeout(const Duration(seconds: 15), onTimeout: () => false);
+      if (ok == true) {
+        _connectedMac = device.mac;
+        _startKeepAlive();
+      }
+      return ok == true;
     } catch (_) {
       return false;
     }
@@ -107,8 +128,9 @@ class BluetoothPrinterService {
 
   Future<void> disconnect() async {
     _stopKeepAlive();
+    _connectedMac = null;
     try {
-      await PrintBluetoothThermal.disconnect;
+      await _channel.invokeMethod<void>('disconnect');
     } catch (_) {
       // abaikan - printer mungkin memang sudah terputus
     }
@@ -120,7 +142,8 @@ class BluetoothPrinterService {
     try {
       final connected = await isConnected();
       if (!connected) return false;
-      return await PrintBluetoothThermal.writeBytes(bytes);
+      final ok = await _channel.invokeMethod<bool>('writeBytes', {'bytes': bytes});
+      return ok == true;
     } catch (_) {
       return false;
     }

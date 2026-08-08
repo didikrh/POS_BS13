@@ -1,4 +1,3 @@
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:flutter/material.dart';
 
 import '../db/database_helper.dart';
@@ -22,8 +21,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _paperWidth = 58;
   int _headerSize = 1;
 
-  List<BluetoothInfo> _pairedDevices = [];
-  BluetoothInfo? _selectedDevice;
+  List<BtDevice> _pairedDevices = [];
+  BtDevice? _selectedDevice;
   bool _connected = false;
   bool _loadingPrinter = false;
   bool _clientExcelBusy = false;
@@ -56,7 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       paperWidthMm: _paperWidth,
       headerSize: _headerSize,
       printerName: _selectedDevice?.name ?? _settings!.printerName,
-      printerMac: _selectedDevice?.macAdress ?? _settings!.printerMac,
+      printerMac: _selectedDevice?.mac ?? _settings!.printerMac,
     );
     await DatabaseHelper.instance.saveSettings(updated);
     setState(() => _settings = updated);
@@ -76,7 +75,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
-  Future<void> _connectPrinter(BluetoothInfo device) async {
+  Future<void> _connectPrinter(BtDevice device) async {
     setState(() => _loadingPrinter = true);
     await BluetoothPrinterService.instance.disconnect();
     final ok = await BluetoothPrinterService.instance.connect(device);
@@ -348,8 +347,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ..._pairedDevices.map((d) => ListTile(
                 leading: const Icon(Icons.print),
                 title: Text(d.name),
-                subtitle: Text(d.macAdress),
-                trailing: (_settings!.printerMac == d.macAdress && _connected)
+                subtitle: Text(d.mac),
+                trailing: (_settings!.printerMac == d.mac && _connected)
                     ? const Icon(Icons.check_circle, color: Colors.green)
                     : null,
                 onTap: () => _connectPrinter(d),
