@@ -22,7 +22,12 @@ dependencies:
   # --- Koneksi printer thermal Bluetooth (Bluetooth Classic / SPP) ---
   # Mayoritas printer thermal 58mm murah memakai profil Bluetooth Classic
   # SPP (bukan BLE), sehingga paket ini paling kompatibel.
-  blue_thermal_printer: ^1.2.3
+  # print_bluetooth_thermal: pengganti blue_thermal_printer (yang lama
+  # sudah tidak dirawat & terbukti gagal connect di Android 14 - hanya
+  # sampai "Paired", tidak pernah "Connected"). Paket ini aktif dirawat,
+  # koneksinya dijaga via Kotlin Coroutine di sisi native (lebih stabil),
+  # dan tidak mewajibkan izin lokasi untuk connect ke printer.
+  print_bluetooth_thermal: ^1.2.2
   permission_handler: ^11.3.1
 
   # --- Scan barcode / QR Code (kamera, berbasis Google ML Kit) ---
